@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -13,8 +13,10 @@ import {
   Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import QRCode from 'react-native-qrcode-svg';
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
+const SURVEY_URL = BACKEND_URL || 'https://rep-survey-tool.preview.emergentagent.com';
 
 interface Product {
   name: string;
@@ -40,7 +42,7 @@ interface Survey {
   created_at: string;
 }
 
-type Tab = 'survey' | 'submissions';
+type Tab = 'survey' | 'submissions' | 'qrcode';
 
 export default function Index() {
   const [activeTab, setActiveTab] = useState<Tab>('survey');
@@ -68,19 +70,16 @@ export default function Index() {
   const [submitting, setSubmitting] = useState(false);
   const [expandedCategories, setExpandedCategories] = useState<{ [key: string]: boolean }>({});
   
-  // Fetch states on mount
   useEffect(() => {
     fetchStates();
   }, []);
   
-  // Fetch submissions when tab changes
   useEffect(() => {
     if (activeTab === 'submissions') {
       fetchSubmissions();
     }
   }, [activeTab]);
   
-  // Fetch regions when state changes
   useEffect(() => {
     if (selectedState) {
       fetchRegions(selectedState);
@@ -91,7 +90,6 @@ export default function Index() {
     }
   }, [selectedState]);
   
-  // Fetch counties and products when region changes
   useEffect(() => {
     if (selectedState && selectedRegion) {
       fetchCounties(selectedState, selectedRegion);
@@ -136,7 +134,6 @@ export default function Index() {
       const response = await fetch(`${BACKEND_URL}/api/products/${encodeURIComponent(state)}/${encodeURIComponent(region)}`);
       const data = await response.json();
       setProducts(data.products);
-      // Initialize expanded categories
       const expanded: { [key: string]: boolean } = {};
       Object.keys(data.products).forEach(cat => { expanded[cat] = false; });
       setExpandedCategories(expanded);
@@ -177,7 +174,6 @@ export default function Index() {
       return;
     }
     
-    // Collect products with retail prices
     const productEntries: ProductEntry[] = [];
     Object.entries(products).forEach(([category, productList]) => {
       productList.forEach((product, index) => {
@@ -220,7 +216,6 @@ export default function Index() {
       
       if (response.ok) {
         Alert.alert('Success', 'Survey submitted successfully!');
-        // Reset form
         setDateOfSurvey('');
         setAccountManager('');
         setAccountName('');
@@ -260,11 +255,10 @@ export default function Index() {
     options: string[],
     selected: string,
     onSelect: (value: string) => void,
-    disabled: boolean = false
   ) => (
     <View style={styles.inputContainer}>
       <Text style={styles.label}>{label}</Text>
-      <View style={[styles.dropdownContainer, disabled && styles.disabledDropdown]}>
+      <View style={styles.dropdownContainer}>
         {options.map((option) => (
           <TouchableOpacity
             key={option}
@@ -272,8 +266,7 @@ export default function Index() {
               styles.dropdownOption,
               selected === option && styles.dropdownOptionSelected
             ]}
-            onPress={() => !disabled && onSelect(option)}
-            disabled={disabled}
+            onPress={() => onSelect(option)}
           >
             <Text style={[
               styles.dropdownOptionText,
@@ -287,8 +280,41 @@ export default function Index() {
     </View>
   );
   
+  const renderQRCode = () => (
+    <ScrollView style={styles.scrollView} contentContainerStyle={styles.centeredContent}>
+      <View style={styles.qrContainer}>
+        <Text style={styles.qrTitle}>Scan to Access Survey</Text>
+        <Text style={styles.qrSubtitle}>Share this QR code with your Reps</Text>
+        
+        <View style={styles.qrBox}>
+          <QRCode
+            value={SURVEY_URL}
+            size={200}
+            backgroundColor="#ffffff"
+            color="#000000"
+          />
+        </View>
+        
+        <Text style={styles.qrUrl}>{SURVEY_URL}</Text>
+        
+        <TouchableOpacity 
+          style={styles.copyButton}
+          onPress={() => {
+            if (Platform.OS === 'web') {
+              navigator.clipboard.writeText(SURVEY_URL);
+              Alert.alert('Copied', 'URL copied to clipboard!');
+            }
+          }}
+        >
+          <Ionicons name="copy-outline" size={18} color="#fff" />
+          <Text style={styles.copyButtonText}>Copy Link</Text>
+        </TouchableOpacity>
+      </View>
+    </ScrollView>
+  );
+  
   const renderSurveyForm = () => (
-    <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+    <ScrollView style={styles.scrollView} contentContainerStyle={styles.centeredContent}>
       <View style={styles.formContainer}>
         <Text style={styles.sectionTitle}>Survey Information</Text>
         
@@ -299,7 +325,7 @@ export default function Index() {
             value={dateOfSurvey}
             onChangeText={setDateOfSurvey}
             placeholder="e.g., 07/15/2025"
-            placeholderTextColor="#888"
+            placeholderTextColor="#666"
           />
         </View>
         
@@ -309,8 +335,8 @@ export default function Index() {
             style={styles.input}
             value={accountManager}
             onChangeText={setAccountManager}
-            placeholder="Enter Account Manager name"
-            placeholderTextColor="#888"
+            placeholder="Enter name"
+            placeholderTextColor="#666"
           />
         </View>
         
@@ -320,8 +346,8 @@ export default function Index() {
             style={styles.input}
             value={accountName}
             onChangeText={setAccountName}
-            placeholder="Enter Account Name"
-            placeholderTextColor="#888"
+            placeholder="Enter account"
+            placeholderTextColor="#666"
           />
         </View>
         
@@ -329,13 +355,9 @@ export default function Index() {
         
         {renderDropdown('State *', states, selectedState, setSelectedState)}
         
-        {selectedState && (
-          renderDropdown('Region *', regions, selectedRegion, setSelectedRegion)
-        )}
+        {selectedState && renderDropdown('Region *', regions, selectedRegion, setSelectedRegion)}
         
-        {selectedRegion && (
-          renderDropdown('County *', counties, selectedCounty, setSelectedCounty)
-        )}
+        {selectedRegion && renderDropdown('County *', counties, selectedCounty, setSelectedCounty)}
         
         {loading ? (
           <ActivityIndicator size="large" color="#2196F3" style={styles.loader} />
@@ -343,7 +365,7 @@ export default function Index() {
           <>
             <Text style={styles.sectionTitle}>Products & Pricing</Text>
             <Text style={styles.instructions}>
-              Enter retail prices for products. % difference will be calculated automatically.
+              Enter retail prices. % difference auto-calculated.
             </Text>
             
             {Object.entries(products).map(([category, productList]) => (
@@ -355,7 +377,7 @@ export default function Index() {
                   <Text style={styles.categoryTitle}>{category}</Text>
                   <Ionicons
                     name={expandedCategories[category] ? 'chevron-up' : 'chevron-down'}
-                    size={24}
+                    size={20}
                     color="#fff"
                   />
                 </TouchableOpacity>
@@ -374,15 +396,15 @@ export default function Index() {
                         <View key={key} style={styles.productRow}>
                           <View style={styles.productInfo}>
                             <Text style={styles.productName}>{product.name}</Text>
-                            <Text style={styles.unitCost}>Unit Cost: ${product.unit_cost.toFixed(2)}</Text>
+                            <Text style={styles.unitCost}>Unit: ${product.unit_cost.toFixed(2)}</Text>
                           </View>
                           <View style={styles.priceInputContainer}>
                             <TextInput
                               style={styles.priceInput}
                               value={retailValue}
                               onChangeText={(value) => handleRetailPriceChange(key, value)}
-                              placeholder="Retail"
-                              placeholderTextColor="#888"
+                              placeholder="$"
+                              placeholderTextColor="#666"
                               keyboardType="decimal-pad"
                             />
                             {percentDiff !== null && (
@@ -422,13 +444,13 @@ export default function Index() {
   );
   
   const renderSubmissions = () => (
-    <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+    <ScrollView style={styles.scrollView} contentContainerStyle={styles.centeredContent}>
       <View style={styles.submissionsContainer}>
         <View style={styles.submissionsHeader}>
-          <Text style={styles.sectionTitle}>Survey Submissions</Text>
+          <Text style={styles.sectionTitle}>Submissions</Text>
           <TouchableOpacity style={styles.exportButton} onPress={handleExportCSV}>
-            <Ionicons name="download-outline" size={20} color="#fff" />
-            <Text style={styles.exportButtonText}>Export CSV</Text>
+            <Ionicons name="download-outline" size={18} color="#fff" />
+            <Text style={styles.exportButtonText}>CSV</Text>
           </TouchableOpacity>
         </View>
         
@@ -446,14 +468,14 @@ export default function Index() {
                 </Text>
               </View>
               <View style={styles.submissionDetails}>
-                <Text style={styles.submissionManager}>
-                  <Text style={styles.bold}>Account Manager:</Text> {survey.account_manager}
+                <Text style={styles.submissionText}>
+                  <Text style={styles.bold}>Manager:</Text> {survey.account_manager}
                 </Text>
-                <Text style={styles.submissionAccount}>
-                  <Text style={styles.bold}>Account Name:</Text> {survey.account_name}
+                <Text style={styles.submissionText}>
+                  <Text style={styles.bold}>Account:</Text> {survey.account_name}
                 </Text>
-                <Text style={styles.submissionProductCount}>
-                  <Text style={styles.bold}>Products Surveyed:</Text> {survey.products.length}
+                <Text style={styles.submissionText}>
+                  <Text style={styles.bold}>Products:</Text> {survey.products.length}
                 </Text>
               </View>
               <View style={styles.productsSummary}>
@@ -478,7 +500,7 @@ export default function Index() {
                 ))}
                 {survey.products.length > 3 && (
                   <Text style={styles.moreProducts}>
-                    +{survey.products.length - 3} more products
+                    +{survey.products.length - 3} more
                   </Text>
                 )}
               </View>
@@ -501,31 +523,28 @@ export default function Index() {
           style={[styles.tab, activeTab === 'survey' && styles.activeTab]}
           onPress={() => setActiveTab('survey')}
         >
-          <Ionicons
-            name="clipboard-outline"
-            size={20}
-            color={activeTab === 'survey' ? '#fff' : '#888'}
-          />
-          <Text style={[styles.tabText, activeTab === 'survey' && styles.activeTabText]}>
-            New Survey
-          </Text>
+          <Ionicons name="create-outline" size={18} color={activeTab === 'survey' ? '#fff' : '#888'} />
+          <Text style={[styles.tabText, activeTab === 'survey' && styles.activeTabText]}>Survey</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.tab, activeTab === 'submissions' && styles.activeTab]}
           onPress={() => setActiveTab('submissions')}
         >
-          <Ionicons
-            name="list-outline"
-            size={20}
-            color={activeTab === 'submissions' ? '#fff' : '#888'}
-          />
-          <Text style={[styles.tabText, activeTab === 'submissions' && styles.activeTabText]}>
-            Submissions
-          </Text>
+          <Ionicons name="list-outline" size={18} color={activeTab === 'submissions' ? '#fff' : '#888'} />
+          <Text style={[styles.tabText, activeTab === 'submissions' && styles.activeTabText]}>Data</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tab, activeTab === 'qrcode' && styles.activeTab]}
+          onPress={() => setActiveTab('qrcode')}
+        >
+          <Ionicons name="qr-code-outline" size={18} color={activeTab === 'qrcode' ? '#fff' : '#888'} />
+          <Text style={[styles.tabText, activeTab === 'qrcode' && styles.activeTabText]}>QR Code</Text>
         </TouchableOpacity>
       </View>
       
-      {activeTab === 'survey' ? renderSurveyForm() : renderSubmissions()}
+      {activeTab === 'survey' && renderSurveyForm()}
+      {activeTab === 'submissions' && renderSubmissions()}
+      {activeTab === 'qrcode' && renderQRCode()}
     </SafeAreaView>
   );
 }
@@ -533,48 +552,52 @@ export default function Index() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#121212',
+    backgroundColor: '#0f0f0f',
   },
   header: {
     paddingHorizontal: 20,
     paddingTop: Platform.OS === 'android' ? 40 : 10,
-    paddingBottom: 15,
+    paddingBottom: 12,
     backgroundColor: '#1a1a1a',
     borderBottomWidth: 1,
     borderBottomColor: '#333',
+    alignItems: 'center',
   },
   headerTitle: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: 'bold',
     color: '#fff',
+    textAlign: 'center',
   },
   headerSubtitle: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#888',
-    marginTop: 4,
+    marginTop: 2,
+    textAlign: 'center',
   },
   tabContainer: {
     flexDirection: 'row',
     backgroundColor: '#1a1a1a',
     paddingHorizontal: 10,
     paddingBottom: 10,
+    justifyContent: 'center',
   },
   tab: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 12,
-    marginHorizontal: 5,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    marginHorizontal: 4,
     borderRadius: 8,
     backgroundColor: '#252525',
-    gap: 8,
+    gap: 6,
   },
   activeTab: {
     backgroundColor: '#2196F3',
   },
   tabText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
     color: '#888',
   },
@@ -584,50 +607,64 @@ const styles = StyleSheet.create({
   scrollView: {
     flex: 1,
   },
+  centeredContent: {
+    alignItems: 'center',
+    paddingBottom: 40,
+  },
   formContainer: {
     padding: 20,
+    width: '100%',
+    maxWidth: 400,
+    alignItems: 'center',
   },
   submissionsContainer: {
     padding: 20,
+    width: '100%',
+    maxWidth: 500,
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: 'bold',
     color: '#fff',
-    marginBottom: 15,
-    marginTop: 10,
+    marginBottom: 12,
+    marginTop: 8,
+    textAlign: 'center',
+    width: '100%',
   },
   inputContainer: {
-    marginBottom: 16,
+    marginBottom: 14,
+    width: '100%',
+    alignItems: 'center',
   },
   label: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
-    color: '#ccc',
-    marginBottom: 8,
+    color: '#aaa',
+    marginBottom: 6,
+    textAlign: 'center',
   },
   input: {
-    backgroundColor: '#252525',
+    backgroundColor: '#1e1e1e',
     borderRadius: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
     color: '#fff',
     borderWidth: 1,
     borderColor: '#333',
+    width: 280,
+    textAlign: 'center',
   },
   dropdownContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
-  },
-  disabledDropdown: {
-    opacity: 0.5,
+    justifyContent: 'center',
   },
   dropdownOption: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     paddingVertical: 10,
-    backgroundColor: '#252525',
+    backgroundColor: '#1e1e1e',
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#333',
@@ -637,7 +674,7 @@ const styles = StyleSheet.create({
     borderColor: '#2196F3',
   },
   dropdownOptionText: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#ccc',
   },
   dropdownOptionTextSelected: {
@@ -645,76 +682,77 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   instructions: {
-    fontSize: 13,
-    color: '#888',
-    marginBottom: 15,
-    fontStyle: 'italic',
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 12,
+    textAlign: 'center',
   },
   categoryContainer: {
-    marginBottom: 12,
-    borderRadius: 10,
+    marginBottom: 10,
+    borderRadius: 8,
     overflow: 'hidden',
     backgroundColor: '#1a1a1a',
+    width: '100%',
   },
   categoryHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    backgroundColor: '#2a2a2a',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    backgroundColor: '#252525',
   },
   categoryTitle: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '600',
     color: '#fff',
     flex: 1,
   },
   productList: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
   },
   productRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 10,
+    paddingVertical: 8,
     borderBottomWidth: 1,
-    borderBottomColor: '#333',
+    borderBottomColor: '#2a2a2a',
   },
   productInfo: {
     flex: 1,
-    paddingRight: 10,
+    paddingRight: 8,
   },
   productName: {
-    fontSize: 14,
-    color: '#fff',
-    marginBottom: 4,
+    fontSize: 13,
+    color: '#ddd',
+    marginBottom: 2,
   },
   unitCost: {
-    fontSize: 12,
-    color: '#888',
+    fontSize: 11,
+    color: '#777',
   },
   priceInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
   },
   priceInput: {
-    width: 80,
-    backgroundColor: '#252525',
+    width: 60,
+    backgroundColor: '#1e1e1e',
     borderRadius: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    fontSize: 14,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    fontSize: 13,
     color: '#fff',
     borderWidth: 1,
     borderColor: '#444',
     textAlign: 'center',
   },
   percentDiff: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
-    minWidth: 50,
+    minWidth: 45,
     textAlign: 'right',
   },
   positive: {
@@ -724,21 +762,21 @@ const styles = StyleSheet.create({
     color: '#F44336',
   },
   loader: {
-    marginVertical: 30,
+    marginVertical: 20,
   },
   submitButton: {
     backgroundColor: '#2196F3',
-    borderRadius: 10,
-    paddingVertical: 16,
+    borderRadius: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 40,
     alignItems: 'center',
-    marginTop: 20,
-    marginBottom: 40,
+    marginTop: 16,
   },
   submitButtonDisabled: {
     opacity: 0.7,
   },
   submitButtonText: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: 'bold',
     color: '#fff',
   },
@@ -752,105 +790,146 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#4CAF50',
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 8,
-    gap: 6,
+    borderRadius: 6,
+    gap: 4,
   },
   exportButtonText: {
     color: '#fff',
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
   },
   noData: {
     textAlign: 'center',
-    color: '#888',
-    fontSize: 16,
-    marginTop: 40,
+    color: '#666',
+    fontSize: 14,
+    marginTop: 30,
   },
   submissionCard: {
     backgroundColor: '#1a1a1a',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
+    borderRadius: 10,
+    padding: 14,
+    marginBottom: 10,
     borderWidth: 1,
-    borderColor: '#333',
+    borderColor: '#2a2a2a',
   },
   submissionHeader: {
-    marginBottom: 12,
-    paddingBottom: 12,
+    marginBottom: 10,
+    paddingBottom: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#333',
+    borderBottomColor: '#2a2a2a',
+    alignItems: 'center',
   },
   submissionDate: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: 'bold',
     color: '#2196F3',
+    textAlign: 'center',
   },
   submissionLocation: {
-    fontSize: 13,
-    color: '#888',
-    marginTop: 4,
+    fontSize: 12,
+    color: '#777',
+    marginTop: 2,
+    textAlign: 'center',
   },
   submissionDetails: {
-    marginBottom: 12,
+    marginBottom: 10,
+    alignItems: 'center',
   },
-  submissionManager: {
-    fontSize: 14,
-    color: '#ccc',
-    marginBottom: 4,
-  },
-  submissionAccount: {
-    fontSize: 14,
-    color: '#ccc',
-    marginBottom: 4,
-  },
-  submissionProductCount: {
-    fontSize: 14,
-    color: '#ccc',
+  submissionText: {
+    fontSize: 13,
+    color: '#bbb',
+    marginBottom: 2,
+    textAlign: 'center',
   },
   bold: {
     fontWeight: '600',
-    color: '#fff',
+    color: '#ddd',
   },
   productsSummary: {
-    backgroundColor: '#252525',
-    borderRadius: 8,
-    padding: 12,
+    backgroundColor: '#222',
+    borderRadius: 6,
+    padding: 10,
   },
   productSummaryRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 6,
+    paddingVertical: 4,
   },
   productSummaryName: {
     flex: 1,
-    fontSize: 13,
-    color: '#ccc',
-    paddingRight: 10,
+    fontSize: 12,
+    color: '#aaa',
+    paddingRight: 8,
   },
   productSummaryPrices: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
   },
   productSummaryPrice: {
-    fontSize: 13,
-    color: '#fff',
+    fontSize: 12,
+    color: '#ddd',
     fontWeight: '500',
   },
   productSummaryPercent: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
-    minWidth: 50,
+    minWidth: 40,
     textAlign: 'right',
   },
   moreProducts: {
-    fontSize: 12,
-    color: '#888',
-    fontStyle: 'italic',
-    marginTop: 8,
+    fontSize: 11,
+    color: '#666',
+    marginTop: 6,
     textAlign: 'center',
+  },
+  // QR Code styles
+  qrContainer: {
+    padding: 30,
+    alignItems: 'center',
+    width: '100%',
+    maxWidth: 400,
+  },
+  qrTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  qrSubtitle: {
+    fontSize: 14,
+    color: '#888',
+    marginBottom: 30,
+    textAlign: 'center',
+  },
+  qrBox: {
+    backgroundColor: '#fff',
+    padding: 20,
+    borderRadius: 12,
+    marginBottom: 20,
+  },
+  qrUrl: {
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  copyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#2196F3',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+    gap: 6,
+  },
+  copyButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });
