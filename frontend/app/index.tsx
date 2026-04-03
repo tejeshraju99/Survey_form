@@ -15,8 +15,10 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import QRCode from 'react-native-qrcode-svg';
 
-const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
-const SURVEY_URL = BACKEND_URL || 'https://rep-survey-tool.preview.emergentagent.com';
+// Railway Backend URL
+const BACKEND_URL = 'https://surveyform-production.up.railway.app';
+// Frontend URL (will be your Vercel URL after deployment)
+const SURVEY_URL = typeof window !== 'undefined' ? window.location.origin : 'https://price-survey-tool.vercel.app';
 
 interface Product {
   name: string;
