@@ -15,8 +15,8 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import QRCode from 'react-native-qrcode-svg';
 
-const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
-const SURVEY_URL = BACKEND_URL || 'https://rep-survey-tool.preview.emergentagent.com';
+const BACKEND_URL = 'https://surveyform-production.up.railway.app';
+const SURVEY_URL = typeof window !== 'undefined' ? window.location.origin : 'https://surveyform-rose.vercel.app';
 
 interface Product {
   name: string;
