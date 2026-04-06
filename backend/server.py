@@ -32,7 +32,7 @@ api_router = APIRouter(prefix="/api")
 
 LOCATION_DATA = {
     "Texas": {
-        "Texas": {
+        "Texas Central": {
             "counties": ["Denton", "Cooke", "Wise"],
             "products": {
                 "24oz cans Budget": [
