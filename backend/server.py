@@ -288,7 +288,7 @@ LOCATION_DATA = {
         }
     },
     "Oklahoma": {
-        "Oklahoma": {
+        "Oklahoma Central": {
             "counties": ["Oklahoma"],
             "products": {
                 "24oz cans Budget": [
