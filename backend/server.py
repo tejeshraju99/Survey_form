@@ -1,5 +1,5 @@
 from pathlib import Path
-import pandas as pd
+import csv
 from fastapi import FastAPI, APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from dotenv import load_dotenv
@@ -17,16 +17,21 @@ import csv
 
 BASE_DIR = Path(__file__).resolve().parent
 
-try:
-    CUSTOMERS_DF = pd.read_csv(BASE_DIR / "customers.csv")
-    CUSTOMERS_DF.columns = CUSTOMERS_DF.columns.str.strip()
-    print("✅ Customers CSV loaded successfully")
-except Exception as e:
-    print("❌ ERROR loading customers.csv:", str(e))
-    CUSTOMERS_DF = None
+CUSTOMERS_DATA = []
 
-# Clean column names
-CUSTOMERS_DF.columns = CUSTOMERS_DF.columns.str.strip()
+try:
+    with open(BASE_DIR / "customers.csv", newline='', encoding='utf-8') as csvfile:
+        reader = csv.DictReader(csvfile)
+        for row in reader:
+            # Clean keys (remove spaces)
+            clean_row = {k.strip(): v for k, v in row.items()}
+            CUSTOMERS_DATA.append(clean_row)
+
+    print("✅ Customers CSV loaded successfully")
+
+except Exception as e:
+    print("❌ Error loading customers.csv:", str(e))
+    CUSTOMERS_DATA = []
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -488,19 +493,20 @@ class Survey(BaseModel):
 
 # ============= API Routes =============
 @api_router.get("/customers/search")
-@api_router.get("/customers/search")
 async def search_customers(query: str):
-    if CUSTOMERS_DF is None:
-        return {"results": []}
-
     if not query or len(query) < 2:
         return {"results": []}
 
-    filtered = CUSTOMERS_DF[
-        CUSTOMERS_DF["Customer Name"].str.contains(query, case=False, na=False)
-    ].head(10)
+    query = query.lower()
 
-    return {"results": filtered.to_dict(orient="records")}
+    results = [
+        c for c in CUSTOMERS_DATA
+        if query in (c.get("Customer Name", "").lower()) or
+           query in (c.get("Customer ID", "").lower()) or
+           query in (c.get("AR Account", "").lower())
+    ][:10]
+
+    return {"results": results}
 
 @api_router.get("/")
 async def root():
