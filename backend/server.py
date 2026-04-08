@@ -1,3 +1,5 @@
+import pandas as pd
+from pathlib import Path
 from fastapi import FastAPI, APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from dotenv import load_dotenv
@@ -12,6 +14,13 @@ import uuid
 from datetime import datetime
 import io
 import csv
+
+BASE_DIR = Path(__file__).resolve().parent
+
+CUSTOMERS_DF = pd.read_csv(BASE_DIR / "customers.csv")
+
+# Clean column names
+CUSTOMERS_DF.columns = CUSTOMERS_DF.columns.str.strip()
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -472,6 +481,18 @@ class Survey(BaseModel):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 # ============= API Routes =============
+@api_router.get("/customers/search")
+async def search_customers(query: str):
+    if not query or len(query) < 2:
+        return {"results": []}
+
+    filtered = CUSTOMERS_DF[
+        CUSTOMERS_DF["Customer Name"].str.contains(query, case=False, na=False) |
+        CUSTOMERS_DF["Customer ID"].astype(str).str.contains(query, case=False, na=False) |
+        CUSTOMERS_DF["AR Account"].astype(str).str.contains(query, case=False, na=False)
+    ].head(10)
+
+    return {"results": filtered.to_dict(orient="records")}
 
 @api_router.get("/")
 async def root():
