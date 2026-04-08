@@ -17,7 +17,13 @@ import csv
 
 BASE_DIR = Path(__file__).resolve().parent
 
-CUSTOMERS_DF = pd.read_csv(BASE_DIR / "customers.csv")
+try:
+    CUSTOMERS_DF = pd.read_csv(BASE_DIR / "customers.csv")
+    CUSTOMERS_DF.columns = CUSTOMERS_DF.columns.str.strip()
+    print("✅ Customers CSV loaded successfully")
+except Exception as e:
+    print("❌ ERROR loading customers.csv:", str(e))
+    CUSTOMERS_DF = None
 
 # Clean column names
 CUSTOMERS_DF.columns = CUSTOMERS_DF.columns.str.strip()
@@ -482,14 +488,16 @@ class Survey(BaseModel):
 
 # ============= API Routes =============
 @api_router.get("/customers/search")
+@api_router.get("/customers/search")
 async def search_customers(query: str):
+    if CUSTOMERS_DF is None:
+        return {"results": []}
+
     if not query or len(query) < 2:
         return {"results": []}
 
     filtered = CUSTOMERS_DF[
-        CUSTOMERS_DF["Customer Name"].str.contains(query, case=False, na=False) |
-        CUSTOMERS_DF["Customer ID"].astype(str).str.contains(query, case=False, na=False) |
-        CUSTOMERS_DF["AR Account"].astype(str).str.contains(query, case=False, na=False)
+        CUSTOMERS_DF["Customer Name"].str.contains(query, case=False, na=False)
     ].head(10)
 
     return {"results": filtered.to_dict(orient="records")}
