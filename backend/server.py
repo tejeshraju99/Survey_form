@@ -570,8 +570,10 @@ async def get_products(state: str, region: str):
 async def create_survey(survey: SurveyCreate):
     survey_dict = survey.dict()
     survey_obj = Survey(**survey_dict)
-    doc = survey_obj.dict()
-    await db.surveys.insert_one(doc)
+    # Use copy so insert_one's _id injection doesn't mutate survey_obj
+    doc_to_insert = survey_obj.dict()
+    doc_to_insert["created_at"] = survey_obj.created_at
+    await db.surveys.insert_one(doc_to_insert)
     return survey_obj
 
 
@@ -586,7 +588,7 @@ async def get_surveys():
 @api_router.get("/surveys/export/csv")
 async def export_surveys_csv():
     """Export all surveys as CSV with full customer fields."""
-    surveys = await db.surveys.find().sort("created_at", -1).to_list(1000)
+    surveys = await db.surveys.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
 
     output = io.StringIO()
     writer = csv.writer(output)
@@ -639,7 +641,7 @@ async def export_surveys_csv():
                 product.get("unit_cost", ""),
                 product.get("retail_price", ""),
                 product.get("percent_difference", ""),
-                survey.get("created_at", ""),
+                str(survey.get("created_at", "")),
             ])
 
     output.seek(0)
