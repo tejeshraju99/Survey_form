@@ -7,49 +7,40 @@ from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
-from pathlib import Path
 from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
+from typing import List, Optional
 import uuid
 from datetime import datetime
 import io
-import csv
 
 BASE_DIR = Path(__file__).resolve().parent
 
+# ============= Load Customers CSV =============
 CUSTOMERS_DATA = []
 
 try:
     with open(BASE_DIR / "customers.csv", newline='', encoding='utf-8') as csvfile:
         reader = csv.DictReader(csvfile)
         for row in reader:
-            # Clean keys (remove spaces)
-            clean_row = {k.strip(): v for k, v in row.items()}
+            clean_row = {k.strip(): v.strip() if v else '' for k, v in row.items()}
             CUSTOMERS_DATA.append(clean_row)
-
-    print("✅ Customers CSV loaded successfully")
-
+    print(f"✅ Customers CSV loaded: {len(CUSTOMERS_DATA)} records")
 except Exception as e:
     print("❌ Error loading customers.csv:", str(e))
     CUSTOMERS_DATA = []
 
+# ============= App Setup =============
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-# MongoDB connection
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
-# Create the main app without a prefix
 app = FastAPI()
-
-# Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
 
 # ============= LOCATION DATA =============
-# Based on Excel: Texas (regions: Texas, Texas West), Oklahoma (no regions, direct counties)
-
 LOCATION_DATA = {
     "Texas": {
         "Texas Central": {
@@ -471,130 +462,176 @@ class ProductEntry(BaseModel):
     retail_price: Optional[float] = None
     percent_difference: Optional[float] = None
 
+
 class SurveyCreate(BaseModel):
     date_of_survey: str
-    account_manager: str
-    account_name: str
+    # Full customer fields from CSV
+    customer_id: Optional[str] = ''
+    customer_name: Optional[str] = ''
+    ar_account: Optional[str] = ''
+    chain: Optional[str] = ''
+    phone: Optional[str] = ''
+    territory: Optional[str] = ''
+    account_status: Optional[str] = ''
+    customer_type: Optional[str] = ''
+    last_month_sales: Optional[str] = ''
+    product_group: Optional[str] = ''
+    distribution_area: Optional[str] = ''
+    # Legacy fields for backward compat
+    account_manager: Optional[str] = ''
+    account_name: Optional[str] = ''
     state: str
     region: str
     county: str
     products: List[ProductEntry]
 
+
 class Survey(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     date_of_survey: str
-    account_manager: str
-    account_name: str
+    # Full customer fields
+    customer_id: Optional[str] = ''
+    customer_name: Optional[str] = ''
+    ar_account: Optional[str] = ''
+    chain: Optional[str] = ''
+    phone: Optional[str] = ''
+    territory: Optional[str] = ''
+    account_status: Optional[str] = ''
+    customer_type: Optional[str] = ''
+    last_month_sales: Optional[str] = ''
+    product_group: Optional[str] = ''
+    distribution_area: Optional[str] = ''
+    # Legacy fields
+    account_manager: Optional[str] = ''
+    account_name: Optional[str] = ''
     state: str
     region: str
     county: str
     products: List[ProductEntry]
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
+
 # ============= API Routes =============
+
 @api_router.get("/customers/search")
 async def search_customers(query: str):
+    """Search customers by name, ID, or AR Account. Requires at least 2 characters."""
     if not query or len(query) < 2:
         return {"results": []}
 
-    query = query.lower()
+    q = query.lower().strip()
 
     results = [
         c for c in CUSTOMERS_DATA
-        if query in (c.get("Customer Name", "").lower()) or
-           query in (c.get("Customer ID", "").lower()) or
-           query in (c.get("AR Account", "").lower())
+        if q in c.get("Customer Name", "").lower()
+        or q in c.get("Customer ID", "").lower()
+        or q in c.get("AR Account", "").lower()
     ][:10]
 
     return {"results": results}
+
 
 @api_router.get("/")
 async def root():
     return {"message": "Price Survey API"}
 
+
 @api_router.get("/states")
 async def get_states():
-    """Get all available states"""
     return {"states": list(LOCATION_DATA.keys())}
+
 
 @api_router.get("/regions/{state}")
 async def get_regions(state: str):
-    """Get regions for a specific state"""
     if state not in LOCATION_DATA:
         raise HTTPException(status_code=404, detail="State not found")
     return {"regions": list(LOCATION_DATA[state].keys())}
 
+
 @api_router.get("/counties/{state}/{region}")
 async def get_counties(state: str, region: str):
-    """Get counties for a specific state and region"""
     if state not in LOCATION_DATA:
         raise HTTPException(status_code=404, detail="State not found")
     if region not in LOCATION_DATA[state]:
         raise HTTPException(status_code=404, detail="Region not found")
     return {"counties": LOCATION_DATA[state][region]["counties"]}
 
+
 @api_router.get("/products/{state}/{region}")
 async def get_products(state: str, region: str):
-    """Get products with unit costs for a specific state and region"""
     if state not in LOCATION_DATA:
         raise HTTPException(status_code=404, detail="State not found")
     if region not in LOCATION_DATA[state]:
         raise HTTPException(status_code=404, detail="Region not found")
     return {"products": LOCATION_DATA[state][region]["products"]}
 
+
 @api_router.post("/surveys", response_model=Survey)
 async def create_survey(survey: SurveyCreate):
-    """Create a new survey submission"""
     survey_dict = survey.dict()
     survey_obj = Survey(**survey_dict)
-    await db.surveys.insert_one(survey_obj.dict())
+    doc = survey_obj.dict()
+    await db.surveys.insert_one(doc)
     return survey_obj
+
 
 @api_router.get("/surveys", response_model=List[Survey])
 async def get_surveys():
-    """Get all survey submissions"""
-    surveys = await db.surveys.find().sort("created_at", -1).to_list(1000)
-    return [Survey(**survey) for survey in surveys]
+    surveys = await db.surveys.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    return [Survey(**s) for s in surveys]
 
-@api_router.get("/surveys/{survey_id}", response_model=Survey)
-async def get_survey(survey_id: str):
-    """Get a specific survey by ID"""
-    survey = await db.surveys.find_one({"id": survey_id})
-    if not survey:
-        raise HTTPException(status_code=404, detail="Survey not found")
-    return Survey(**survey)
 
-@api_router.delete("/surveys/{survey_id}")
-async def delete_survey(survey_id: str):
-    """Delete a survey"""
-    result = await db.surveys.delete_one({"id": survey_id})
-    if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Survey not found")
-    return {"message": "Survey deleted successfully"}
-
+# NOTE: This route MUST be declared before /surveys/{survey_id} to prevent
+# FastAPI from matching "export" as a survey_id path parameter.
 @api_router.get("/surveys/export/csv")
 async def export_surveys_csv():
-    """Export all surveys as CSV"""
+    """Export all surveys as CSV with full customer fields."""
     surveys = await db.surveys.find().sort("created_at", -1).to_list(1000)
-    
+
     output = io.StringIO()
     writer = csv.writer(output)
-    
-    # Write header
+
+    # Header — full customer fields + survey fields + product fields
     writer.writerow([
-        "Survey ID", "Date of Survey", "Account Manager", "Account Name",
-        "State", "Region", "County", "Product Name", "Unit Cost", 
-        "Retail Price", "% Difference", "Created At"
+        "Survey ID",
+        "Date of Survey",
+        "Customer ID",
+        "Customer Name",
+        "AR Account",
+        "Chain",
+        "Phone",
+        "Territory",
+        "Account Status",
+        "Customer Type",
+        "Last Month Sales",
+        "Product Group",
+        "Distribution Area",
+        "State",
+        "Region",
+        "County",
+        "Product Name",
+        "Unit Cost",
+        "Retail Price",
+        "% Difference",
+        "Created At",
     ])
-    
-    # Write data rows
+
     for survey in surveys:
         for product in survey.get("products", []):
             writer.writerow([
                 survey.get("id", ""),
                 survey.get("date_of_survey", ""),
-                survey.get("account_manager", ""),
-                survey.get("account_name", ""),
+                survey.get("customer_id", ""),
+                survey.get("customer_name", "") or survey.get("account_name", ""),
+                survey.get("ar_account", ""),
+                survey.get("chain", ""),
+                survey.get("phone", ""),
+                survey.get("territory", ""),
+                survey.get("account_status", ""),
+                survey.get("customer_type", ""),
+                survey.get("last_month_sales", ""),
+                survey.get("product_group", ""),
+                survey.get("distribution_area", ""),
                 survey.get("state", ""),
                 survey.get("region", ""),
                 survey.get("county", ""),
@@ -602,18 +639,34 @@ async def export_surveys_csv():
                 product.get("unit_cost", ""),
                 product.get("retail_price", ""),
                 product.get("percent_difference", ""),
-                survey.get("created_at", "")
+                survey.get("created_at", ""),
             ])
-    
+
     output.seek(0)
-    
     return StreamingResponse(
         iter([output.getvalue()]),
         media_type="text/csv",
-        headers={"Content-Disposition": "attachment; filename=price_surveys.csv"}
+        headers={"Content-Disposition": "attachment; filename=price_surveys.csv"},
     )
 
-# Include the router in the main app
+
+@api_router.get("/surveys/{survey_id}", response_model=Survey)
+async def get_survey(survey_id: str):
+    survey = await db.surveys.find_one({"id": survey_id}, {"_id": 0})
+    if not survey:
+        raise HTTPException(status_code=404, detail="Survey not found")
+    return Survey(**survey)
+
+
+@api_router.delete("/surveys/{survey_id}")
+async def delete_survey(survey_id: str):
+    result = await db.surveys.delete_one({"id": survey_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Survey not found")
+    return {"message": "Survey deleted successfully"}
+
+
+# ============= App Config =============
 app.include_router(api_router)
 
 app.add_middleware(
@@ -624,12 +677,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
