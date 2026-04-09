@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
   Alert,
   Platform,
   Linking,
+  FlatList,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import QRCode from 'react-native-qrcode-svg';
@@ -30,9 +31,37 @@ interface ProductEntry {
   percent_difference: number | null;
 }
 
+// Full customer record from CSV
+interface Customer {
+  'Customer ID': string;
+  'Customer Name': string;
+  'AR Account': string;
+  'Chain': string;
+  'Phone': string;
+  'Territory': string;
+  'Account Status': string;
+  'Customer Type': string;
+  'Last Month Sales': string;
+  'Product Group': string;
+  'Distribution Area': string;
+}
+
 interface Survey {
   id: string;
   date_of_survey: string;
+  // Customer fields
+  customer_id: string;
+  customer_name: string;
+  ar_account: string;
+  chain: string;
+  phone: string;
+  territory: string;
+  account_status: string;
+  customer_type: string;
+  last_month_sales: string;
+  product_group: string;
+  distribution_area: string;
+  // Legacy fields kept for backward compat
   account_manager: string;
   account_name: string;
   state: string;
@@ -46,40 +75,47 @@ type Tab = 'survey' | 'submissions' | 'qrcode';
 
 export default function Index() {
   const [activeTab, setActiveTab] = useState<Tab>('survey');
-  
+
   // Survey Form State
   const [dateOfSurvey, setDateOfSurvey] = useState('');
-  const [accountManager, setAccountManager] = useState('');
-  const [accountName, setAccountName] = useState('');
+
+  // Customer search state
+  const [customerQuery, setCustomerQuery] = useState('');
+  const [customerResults, setCustomerResults] = useState<Customer[]>([]);
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const [selectedState, setSelectedState] = useState('');
   const [selectedRegion, setSelectedRegion] = useState('');
   const [selectedCounty, setSelectedCounty] = useState('');
-  
+
   // Data State
   const [states, setStates] = useState<string[]>([]);
   const [regions, setRegions] = useState<string[]>([]);
   const [counties, setCounties] = useState<string[]>([]);
   const [products, setProducts] = useState<{ [category: string]: Product[] }>({});
   const [retailPrices, setRetailPrices] = useState<{ [key: string]: string }>({});
-  
+
   // Submissions State
   const [submissions, setSubmissions] = useState<Survey[]>([]);
-  
+
   // UI State
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [expandedCategories, setExpandedCategories] = useState<{ [key: string]: boolean }>({});
-  
+
   useEffect(() => {
     fetchStates();
   }, []);
-  
+
   useEffect(() => {
     if (activeTab === 'submissions') {
       fetchSubmissions();
     }
   }, [activeTab]);
-  
+
   useEffect(() => {
     if (selectedState) {
       fetchRegions(selectedState);
@@ -89,7 +125,7 @@ export default function Index() {
       setRetailPrices({});
     }
   }, [selectedState]);
-  
+
   useEffect(() => {
     if (selectedState && selectedRegion) {
       fetchCounties(selectedState, selectedRegion);
@@ -97,7 +133,52 @@ export default function Index() {
       setSelectedCounty('');
     }
   }, [selectedRegion]);
-  
+
+  // Debounced customer search
+  useEffect(() => {
+    if (customerQuery.length < 2) {
+      setCustomerResults([]);
+      setShowDropdown(false);
+      return;
+    }
+    if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    searchTimeout.current = setTimeout(() => {
+      searchCustomers(customerQuery);
+    }, 300);
+    return () => {
+      if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    };
+  }, [customerQuery]);
+
+  const searchCustomers = async (query: string) => {
+    setSearchLoading(true);
+    try {
+      const response = await fetch(
+        `${BACKEND_URL}/api/customers/search?query=${encodeURIComponent(query)}`
+      );
+      const data = await response.json();
+      setCustomerResults(data.results || []);
+      setShowDropdown(true);
+    } catch (error) {
+      console.error('Error searching customers:', error);
+    }
+    setSearchLoading(false);
+  };
+
+  const handleSelectCustomer = (customer: Customer) => {
+    setSelectedCustomer(customer);
+    setCustomerQuery(customer['Customer Name']);
+    setShowDropdown(false);
+    setCustomerResults([]);
+  };
+
+  const handleClearCustomer = () => {
+    setSelectedCustomer(null);
+    setCustomerQuery('');
+    setShowDropdown(false);
+    setCustomerResults([]);
+  };
+
   const fetchStates = async () => {
     try {
       const response = await fetch(`${BACKEND_URL}/api/states`);
@@ -107,7 +188,7 @@ export default function Index() {
       console.error('Error fetching states:', error);
     }
   };
-  
+
   const fetchRegions = async (state: string) => {
     try {
       const response = await fetch(`${BACKEND_URL}/api/regions/${encodeURIComponent(state)}`);
@@ -117,32 +198,38 @@ export default function Index() {
       console.error('Error fetching regions:', error);
     }
   };
-  
+
   const fetchCounties = async (state: string, region: string) => {
     try {
-      const response = await fetch(`${BACKEND_URL}/api/counties/${encodeURIComponent(state)}/${encodeURIComponent(region)}`);
+      const response = await fetch(
+        `${BACKEND_URL}/api/counties/${encodeURIComponent(state)}/${encodeURIComponent(region)}`
+      );
       const data = await response.json();
       setCounties(data.counties);
     } catch (error) {
       console.error('Error fetching counties:', error);
     }
   };
-  
+
   const fetchProducts = async (state: string, region: string) => {
     setLoading(true);
     try {
-      const response = await fetch(`${BACKEND_URL}/api/products/${encodeURIComponent(state)}/${encodeURIComponent(region)}`);
+      const response = await fetch(
+        `${BACKEND_URL}/api/products/${encodeURIComponent(state)}/${encodeURIComponent(region)}`
+      );
       const data = await response.json();
       setProducts(data.products);
       const expanded: { [key: string]: boolean } = {};
-      Object.keys(data.products).forEach(cat => { expanded[cat] = false; });
+      Object.keys(data.products).forEach((cat) => {
+        expanded[cat] = false;
+      });
       setExpandedCategories(expanded);
     } catch (error) {
       console.error('Error fetching products:', error);
     }
     setLoading(false);
   };
-  
+
   const fetchSubmissions = async () => {
     setLoading(true);
     try {
@@ -154,26 +241,26 @@ export default function Index() {
     }
     setLoading(false);
   };
-  
+
   const calculatePercentDifference = (unitCost: number, retailPrice: number): number => {
     if (unitCost === 0) return 0;
     return ((retailPrice - unitCost) / unitCost) * 100;
   };
-  
+
   const handleRetailPriceChange = (productKey: string, value: string) => {
-    setRetailPrices(prev => ({ ...prev, [productKey]: value }));
+    setRetailPrices((prev) => ({ ...prev, [productKey]: value }));
   };
-  
+
   const toggleCategory = (category: string) => {
-    setExpandedCategories(prev => ({ ...prev, [category]: !prev[category] }));
+    setExpandedCategories((prev) => ({ ...prev, [category]: !prev[category] }));
   };
-  
+
   const handleSubmit = async () => {
-    if (!dateOfSurvey || !accountManager || !accountName || !selectedState || !selectedRegion || !selectedCounty) {
-      Alert.alert('Error', 'Please fill in all required fields');
+    if (!dateOfSurvey || !selectedCustomer || !selectedState || !selectedRegion || !selectedCounty) {
+      Alert.alert('Error', 'Please fill in all required fields including selecting a customer');
       return;
     }
-    
+
     const productEntries: ProductEntry[] = [];
     Object.entries(products).forEach(([category, productList]) => {
       productList.forEach((product, index) => {
@@ -192,12 +279,12 @@ export default function Index() {
         }
       });
     });
-    
+
     if (productEntries.length === 0) {
       Alert.alert('Error', 'Please enter at least one retail price');
       return;
     }
-    
+
     setSubmitting(true);
     try {
       const response = await fetch(`${BACKEND_URL}/api/surveys`, {
@@ -205,20 +292,33 @@ export default function Index() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           date_of_survey: dateOfSurvey,
-          account_manager: accountManager,
-          account_name: accountName,
+          // Full customer data
+          customer_id: selectedCustomer['Customer ID'],
+          customer_name: selectedCustomer['Customer Name'],
+          ar_account: selectedCustomer['AR Account'],
+          chain: selectedCustomer['Chain'],
+          phone: selectedCustomer['Phone'] || '',
+          territory: selectedCustomer['Territory'] || '',
+          account_status: selectedCustomer['Account Status'] || '',
+          customer_type: selectedCustomer['Customer Type'] || '',
+          last_month_sales: selectedCustomer['Last Month Sales'] || '',
+          product_group: selectedCustomer['Product Group'] || '',
+          distribution_area: selectedCustomer['Distribution Area'] || '',
+          // Legacy fields for backward compat
+          account_manager: selectedCustomer['Customer Name'],
+          account_name: selectedCustomer['AR Account'],
           state: selectedState,
           region: selectedRegion,
           county: selectedCounty,
           products: productEntries,
         }),
       });
-      
+
       if (response.ok) {
         Alert.alert('Success', 'Survey submitted successfully!');
         setDateOfSurvey('');
-        setAccountManager('');
-        setAccountName('');
+        setSelectedCustomer(null);
+        setCustomerQuery('');
         setSelectedState('');
         setSelectedRegion('');
         setSelectedCounty('');
@@ -235,7 +335,7 @@ export default function Index() {
     }
     setSubmitting(false);
   };
-  
+
   const handleExportCSV = async () => {
     try {
       const url = `${BACKEND_URL}/api/surveys/export/csv`;
@@ -249,12 +349,12 @@ export default function Index() {
       Alert.alert('Error', 'Failed to export CSV');
     }
   };
-  
+
   const renderDropdown = (
     label: string,
     options: string[],
     selected: string,
-    onSelect: (value: string) => void,
+    onSelect: (value: string) => void
   ) => (
     <View style={styles.inputContainer}>
       <Text style={styles.label}>{label}</Text>
@@ -262,16 +362,15 @@ export default function Index() {
         {options.map((option) => (
           <TouchableOpacity
             key={option}
-            style={[
-              styles.dropdownOption,
-              selected === option && styles.dropdownOptionSelected
-            ]}
+            style={[styles.dropdownOption, selected === option && styles.dropdownOptionSelected]}
             onPress={() => onSelect(option)}
           >
-            <Text style={[
-              styles.dropdownOptionText,
-              selected === option && styles.dropdownOptionTextSelected
-            ]}>
+            <Text
+              style={[
+                styles.dropdownOptionText,
+                selected === option && styles.dropdownOptionTextSelected,
+              ]}
+            >
               {option}
             </Text>
           </TouchableOpacity>
@@ -279,25 +378,116 @@ export default function Index() {
       </View>
     </View>
   );
-  
+
+  const renderCustomerSearch = () => (
+    <View style={styles.inputContainer}>
+      <Text style={styles.label}>Account / Customer *</Text>
+      <Text style={styles.sublabel}>Type at least 2 characters to search by name, ID, or AR Account</Text>
+
+      <View style={styles.searchWrapper}>
+        <View style={styles.searchInputRow}>
+          <Ionicons name="search-outline" size={16} color="#666" style={styles.searchIcon} />
+          <TextInput
+            style={styles.searchInput}
+            value={customerQuery}
+            onChangeText={(text) => {
+              setCustomerQuery(text);
+              if (selectedCustomer) setSelectedCustomer(null);
+            }}
+            placeholder="Search customer..."
+            placeholderTextColor="#555"
+          />
+          {(customerQuery.length > 0 || selectedCustomer) && (
+            <TouchableOpacity onPress={handleClearCustomer} style={styles.clearBtn}>
+              <Ionicons name="close-circle" size={18} color="#666" />
+            </TouchableOpacity>
+          )}
+          {searchLoading && <ActivityIndicator size="small" color="#2196F3" style={{ marginLeft: 6 }} />}
+        </View>
+
+        {/* Dropdown results */}
+        {showDropdown && customerResults.length > 0 && (
+          <View style={styles.resultsDropdown}>
+            {customerResults.map((item) => (
+              <TouchableOpacity
+                key={item['Customer ID']}
+                style={styles.resultItem}
+                onPress={() => handleSelectCustomer(item)}
+              >
+                <View style={styles.resultMain}>
+                  <Text style={styles.resultName} numberOfLines={1}>
+                    {item['Customer Name']}
+                  </Text>
+                  <Text style={styles.resultSub}>
+                    ID: {item['Customer ID']} · {item['Customer Type']}
+                  </Text>
+                </View>
+                <Text style={styles.resultAR} numberOfLines={1}>
+                  {item['AR Account']}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+
+        {showDropdown && customerResults.length === 0 && !searchLoading && customerQuery.length >= 2 && (
+          <View style={styles.resultsDropdown}>
+            <Text style={styles.noResults}>No customers found</Text>
+          </View>
+        )}
+      </View>
+
+      {/* Selected customer card */}
+      {selectedCustomer && (
+        <View style={styles.selectedCard}>
+          <View style={styles.selectedCardHeader}>
+            <Ionicons name="checkmark-circle" size={16} color="#4CAF50" />
+            <Text style={styles.selectedCardTitle}>Selected Customer</Text>
+          </View>
+          <View style={styles.selectedCardGrid}>
+            <View style={styles.selectedCardRow}>
+              <Text style={styles.selectedCardLabel}>Customer ID</Text>
+              <Text style={styles.selectedCardValue}>{selectedCustomer['Customer ID']}</Text>
+            </View>
+            <View style={styles.selectedCardRow}>
+              <Text style={styles.selectedCardLabel}>Name</Text>
+              <Text style={styles.selectedCardValue} numberOfLines={2}>{selectedCustomer['Customer Name']}</Text>
+            </View>
+            <View style={styles.selectedCardRow}>
+              <Text style={styles.selectedCardLabel}>AR Account</Text>
+              <Text style={styles.selectedCardValue} numberOfLines={1}>{selectedCustomer['AR Account']}</Text>
+            </View>
+            <View style={styles.selectedCardRow}>
+              <Text style={styles.selectedCardLabel}>Chain</Text>
+              <Text style={styles.selectedCardValue} numberOfLines={1}>{selectedCustomer['Chain']}</Text>
+            </View>
+            <View style={styles.selectedCardRow}>
+              <Text style={styles.selectedCardLabel}>Type</Text>
+              <Text style={styles.selectedCardValue}>{selectedCustomer['Customer Type']}</Text>
+            </View>
+            <View style={styles.selectedCardRow}>
+              <Text style={styles.selectedCardLabel}>Territory</Text>
+              <Text style={styles.selectedCardValue}>{selectedCustomer['Territory']}</Text>
+            </View>
+          </View>
+        </View>
+      )}
+    </View>
+  );
+
   const renderQRCode = () => (
     <ScrollView style={styles.scrollView} contentContainerStyle={styles.centeredContent}>
       <View style={styles.qrContainer}>
         <Text style={styles.qrTitle}>Scan to Access Survey</Text>
         <Text style={styles.qrSubtitle}>Share this QR code with your Reps</Text>
-        
+
         <View style={styles.qrBox}>
-          <QRCode
-            value={SURVEY_URL}
-            size={200}
-            backgroundColor="#ffffff"
-            color="#000000"
-          />
+          <QRCode value={SURVEY_URL} size={200} backgroundColor="#ffffff" color="#000000" />
         </View>
-        
+
         <Text style={styles.qrUrl}>{SURVEY_URL}</Text>
-        
-        <TouchableOpacity 
+
+        <TouchableOpacity
           style={styles.copyButton}
           onPress={() => {
             if (Platform.OS === 'web') {
@@ -312,12 +502,12 @@ export default function Index() {
       </View>
     </ScrollView>
   );
-  
+
   const renderSurveyForm = () => (
     <ScrollView style={styles.scrollView} contentContainerStyle={styles.centeredContent}>
       <View style={styles.formContainer}>
         <Text style={styles.sectionTitle}>Survey Information</Text>
-        
+
         <View style={styles.inputContainer}>
           <Text style={styles.label}>Date of Survey *</Text>
           <TextInput
@@ -325,107 +515,95 @@ export default function Index() {
             value={dateOfSurvey}
             onChangeText={setDateOfSurvey}
             placeholder="e.g., 07/15/2025"
-            placeholderTextColor="#666"
+            placeholderTextColor="#555"
           />
         </View>
-        
-        <View style={styles.inputContainer}>
-          <Text style={styles.label}>Account Manager *</Text>
-          <TextInput
-            style={styles.input}
-            value={accountManager}
-            onChangeText={setAccountManager}
-            placeholder="Enter name"
-            placeholderTextColor="#666"
-          />
-        </View>
-        
-        <View style={styles.inputContainer}>
-          <Text style={styles.label}>Account Name *</Text>
-          <TextInput
-            style={styles.input}
-            value={accountName}
-            onChangeText={setAccountName}
-            placeholder="Enter account"
-            placeholderTextColor="#666"
-          />
-        </View>
-        
+
+        {renderCustomerSearch()}
+
         <Text style={styles.sectionTitle}>Location</Text>
-        
+
         {renderDropdown('State *', states, selectedState, setSelectedState)}
-        
+
         {selectedState && renderDropdown('Region *', regions, selectedRegion, setSelectedRegion)}
-        
+
         {selectedRegion && renderDropdown('County *', counties, selectedCounty, setSelectedCounty)}
-        
+
         {loading ? (
           <ActivityIndicator size="large" color="#2196F3" style={styles.loader} />
-        ) : Object.keys(products).length > 0 && (
-          <>
-            <Text style={styles.sectionTitle}>Products & Pricing</Text>
-            <Text style={styles.instructions}>
-              Enter retail prices. % difference auto-calculated.
-            </Text>
-            
-            {Object.entries(products).map(([category, productList]) => (
-              <View key={category} style={styles.categoryContainer}>
-                <TouchableOpacity
-                  style={styles.categoryHeader}
-                  onPress={() => toggleCategory(category)}
-                >
-                  <Text style={styles.categoryTitle}>{category}</Text>
-                  <Ionicons
-                    name={expandedCategories[category] ? 'chevron-up' : 'chevron-down'}
-                    size={20}
-                    color="#fff"
-                  />
-                </TouchableOpacity>
-                
-                {expandedCategories[category] && (
-                  <View style={styles.productList}>
-                    {productList.map((product, index) => {
-                      const key = `${category}-${index}`;
-                      const retailValue = retailPrices[key] || '';
-                      const retailNum = parseFloat(retailValue);
-                      const percentDiff = !isNaN(retailNum) && retailValue !== ''
-                        ? calculatePercentDifference(product.unit_cost, retailNum)
-                        : null;
-                      
-                      return (
-                        <View key={key} style={styles.productRow}>
-                          <View style={styles.productInfo}>
-                            <Text style={styles.productName}>{product.name}</Text>
-                            <Text style={styles.unitCost}>Unit: ${product.unit_cost.toFixed(2)}</Text>
-                          </View>
-                          <View style={styles.priceInputContainer}>
-                            <TextInput
-                              style={styles.priceInput}
-                              value={retailValue}
-                              onChangeText={(value) => handleRetailPriceChange(key, value)}
-                              placeholder="$"
-                              placeholderTextColor="#666"
-                              keyboardType="decimal-pad"
-                            />
-                            {percentDiff !== null && (
-                              <Text style={[
-                                styles.percentDiff,
-                                percentDiff >= 0 ? styles.positive : styles.negative
-                              ]}>
-                                {percentDiff >= 0 ? '+' : ''}{percentDiff.toFixed(1)}%
+        ) : (
+          Object.keys(products).length > 0 && (
+            <>
+              <Text style={styles.sectionTitle}>Products & Pricing</Text>
+              <Text style={styles.instructions}>
+                Enter retail prices. % difference auto-calculated.
+              </Text>
+
+              {Object.entries(products).map(([category, productList]) => (
+                <View key={category} style={styles.categoryContainer}>
+                  <TouchableOpacity
+                    style={styles.categoryHeader}
+                    onPress={() => toggleCategory(category)}
+                  >
+                    <Text style={styles.categoryTitle}>{category}</Text>
+                    <Ionicons
+                      name={expandedCategories[category] ? 'chevron-up' : 'chevron-down'}
+                      size={20}
+                      color="#fff"
+                    />
+                  </TouchableOpacity>
+
+                  {expandedCategories[category] && (
+                    <View style={styles.productList}>
+                      {productList.map((product, index) => {
+                        const key = `${category}-${index}`;
+                        const retailValue = retailPrices[key] || '';
+                        const retailNum = parseFloat(retailValue);
+                        const percentDiff =
+                          !isNaN(retailNum) && retailValue !== ''
+                            ? calculatePercentDifference(product.unit_cost, retailNum)
+                            : null;
+
+                        return (
+                          <View key={key} style={styles.productRow}>
+                            <View style={styles.productInfo}>
+                              <Text style={styles.productName}>{product.name}</Text>
+                              <Text style={styles.unitCost}>
+                                Unit: ${product.unit_cost.toFixed(2)}
                               </Text>
-                            )}
+                            </View>
+                            <View style={styles.priceInputContainer}>
+                              <TextInput
+                                style={styles.priceInput}
+                                value={retailValue}
+                                onChangeText={(value) => handleRetailPriceChange(key, value)}
+                                placeholder="$"
+                                placeholderTextColor="#555"
+                                keyboardType="decimal-pad"
+                              />
+                              {percentDiff !== null && (
+                                <Text
+                                  style={[
+                                    styles.percentDiff,
+                                    percentDiff >= 0 ? styles.positive : styles.negative,
+                                  ]}
+                                >
+                                  {percentDiff >= 0 ? '+' : ''}
+                                  {percentDiff.toFixed(1)}%
+                                </Text>
+                              )}
+                            </View>
                           </View>
-                        </View>
-                      );
-                    })}
-                  </View>
-                )}
-              </View>
-            ))}
-          </>
+                        );
+                      })}
+                    </View>
+                  )}
+                </View>
+              ))}
+            </>
+          )
         )}
-        
+
         {Object.keys(products).length > 0 && (
           <TouchableOpacity
             style={[styles.submitButton, submitting && styles.submitButtonDisabled]}
@@ -442,7 +620,7 @@ export default function Index() {
       </View>
     </ScrollView>
   );
-  
+
   const renderSubmissions = () => (
     <ScrollView style={styles.scrollView} contentContainerStyle={styles.centeredContent}>
       <View style={styles.submissionsContainer}>
@@ -453,7 +631,7 @@ export default function Index() {
             <Text style={styles.exportButtonText}>CSV</Text>
           </TouchableOpacity>
         </View>
-        
+
         {loading ? (
           <ActivityIndicator size="large" color="#2196F3" style={styles.loader} />
         ) : submissions.length === 0 ? (
@@ -464,18 +642,29 @@ export default function Index() {
               <View style={styles.submissionHeader}>
                 <Text style={styles.submissionDate}>{survey.date_of_survey}</Text>
                 <Text style={styles.submissionLocation}>
-                  {survey.state} • {survey.region} • {survey.county}
+                  {survey.state} · {survey.region} · {survey.county}
                 </Text>
               </View>
               <View style={styles.submissionDetails}>
                 <Text style={styles.submissionText}>
-                  <Text style={styles.bold}>Manager:</Text> {survey.account_manager}
+                  <Text style={styles.bold}>Customer: </Text>
+                  {survey.customer_name || survey.account_name}
                 </Text>
+                {survey.customer_id && (
+                  <Text style={styles.submissionText}>
+                    <Text style={styles.bold}>ID: </Text>
+                    {survey.customer_id}
+                  </Text>
+                )}
+                {survey.customer_type && (
+                  <Text style={styles.submissionText}>
+                    <Text style={styles.bold}>Type: </Text>
+                    {survey.customer_type}
+                  </Text>
+                )}
                 <Text style={styles.submissionText}>
-                  <Text style={styles.bold}>Account:</Text> {survey.account_name}
-                </Text>
-                <Text style={styles.submissionText}>
-                  <Text style={styles.bold}>Products:</Text> {survey.products.length}
+                  <Text style={styles.bold}>Products: </Text>
+                  {survey.products.length}
                 </Text>
               </View>
               <View style={styles.productsSummary}>
@@ -488,10 +677,14 @@ export default function Index() {
                       <Text style={styles.productSummaryPrice}>
                         ${product.retail_price?.toFixed(2)}
                       </Text>
-                      <Text style={[
-                        styles.productSummaryPercent,
-                        (product.percent_difference || 0) >= 0 ? styles.positive : styles.negative
-                      ]}>
+                      <Text
+                        style={[
+                          styles.productSummaryPercent,
+                          (product.percent_difference || 0) >= 0
+                            ? styles.positive
+                            : styles.negative,
+                        ]}
+                      >
                         {(product.percent_difference || 0) >= 0 ? '+' : ''}
                         {product.percent_difference?.toFixed(1)}%
                       </Text>
@@ -510,38 +703,56 @@ export default function Index() {
       </View>
     </ScrollView>
   );
-  
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Price Survey Tool</Text>
         <Text style={styles.headerSubtitle}>Independent C-Store Survey</Text>
       </View>
-      
+
       <View style={styles.tabContainer}>
         <TouchableOpacity
           style={[styles.tab, activeTab === 'survey' && styles.activeTab]}
           onPress={() => setActiveTab('survey')}
         >
-          <Ionicons name="create-outline" size={18} color={activeTab === 'survey' ? '#fff' : '#888'} />
-          <Text style={[styles.tabText, activeTab === 'survey' && styles.activeTabText]}>Survey</Text>
+          <Ionicons
+            name="create-outline"
+            size={18}
+            color={activeTab === 'survey' ? '#fff' : '#888'}
+          />
+          <Text style={[styles.tabText, activeTab === 'survey' && styles.activeTabText]}>
+            Survey
+          </Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.tab, activeTab === 'submissions' && styles.activeTab]}
           onPress={() => setActiveTab('submissions')}
         >
-          <Ionicons name="list-outline" size={18} color={activeTab === 'submissions' ? '#fff' : '#888'} />
-          <Text style={[styles.tabText, activeTab === 'submissions' && styles.activeTabText]}>Data</Text>
+          <Ionicons
+            name="list-outline"
+            size={18}
+            color={activeTab === 'submissions' ? '#fff' : '#888'}
+          />
+          <Text style={[styles.tabText, activeTab === 'submissions' && styles.activeTabText]}>
+            Data
+          </Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.tab, activeTab === 'qrcode' && styles.activeTab]}
           onPress={() => setActiveTab('qrcode')}
         >
-          <Ionicons name="qr-code-outline" size={18} color={activeTab === 'qrcode' ? '#fff' : '#888'} />
-          <Text style={[styles.tabText, activeTab === 'qrcode' && styles.activeTabText]}>QR Code</Text>
+          <Ionicons
+            name="qr-code-outline"
+            size={18}
+            color={activeTab === 'qrcode' ? '#fff' : '#888'}
+          />
+          <Text style={[styles.tabText, activeTab === 'qrcode' && styles.activeTabText]}>
+            QR Code
+          </Text>
         </TouchableOpacity>
       </View>
-      
+
       {activeTab === 'survey' && renderSurveyForm()}
       {activeTab === 'submissions' && renderSubmissions()}
       {activeTab === 'qrcode' && renderQRCode()}
@@ -614,7 +825,7 @@ const styles = StyleSheet.create({
   formContainer: {
     padding: 20,
     width: '100%',
-    maxWidth: 400,
+    maxWidth: 440,
     alignItems: 'center',
   },
   submissionsContainer: {
@@ -640,7 +851,13 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: '#aaa',
-    marginBottom: 6,
+    marginBottom: 4,
+    textAlign: 'center',
+  },
+  sublabel: {
+    fontSize: 11,
+    color: '#555',
+    marginBottom: 8,
     textAlign: 'center',
   },
   input: {
@@ -655,6 +872,124 @@ const styles = StyleSheet.create({
     width: 280,
     textAlign: 'center',
   },
+
+  // Customer search
+  searchWrapper: {
+    width: '100%',
+    position: 'relative',
+    zIndex: 100,
+  },
+  searchInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1e1e1e',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#333',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: '#fff',
+    paddingVertical: 2,
+  },
+  clearBtn: {
+    padding: 2,
+    marginLeft: 6,
+  },
+  resultsDropdown: {
+    backgroundColor: '#1e1e1e',
+    borderWidth: 1,
+    borderColor: '#333',
+    borderRadius: 8,
+    marginTop: 4,
+    maxHeight: 260,
+    overflow: 'hidden',
+  },
+  resultItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#2a2a2a',
+  },
+  resultMain: {
+    flex: 1,
+    paddingRight: 8,
+  },
+  resultName: {
+    fontSize: 13,
+    color: '#fff',
+    fontWeight: '600',
+  },
+  resultSub: {
+    fontSize: 11,
+    color: '#777',
+    marginTop: 1,
+  },
+  resultAR: {
+    fontSize: 11,
+    color: '#555',
+    maxWidth: 120,
+    textAlign: 'right',
+  },
+  noResults: {
+    padding: 14,
+    color: '#666',
+    fontSize: 13,
+    textAlign: 'center',
+  },
+
+  // Selected customer card
+  selectedCard: {
+    backgroundColor: '#1a2a1a',
+    borderWidth: 1,
+    borderColor: '#2a4a2a',
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 10,
+    width: '100%',
+  },
+  selectedCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 8,
+  },
+  selectedCardTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#4CAF50',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  selectedCardGrid: {
+    gap: 4,
+  },
+  selectedCardRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    paddingVertical: 2,
+  },
+  selectedCardLabel: {
+    fontSize: 12,
+    color: '#666',
+    minWidth: 90,
+  },
+  selectedCardValue: {
+    fontSize: 12,
+    color: '#ccc',
+    flex: 1,
+    textAlign: 'right',
+  },
+
   dropdownContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -886,7 +1221,6 @@ const styles = StyleSheet.create({
     marginTop: 6,
     textAlign: 'center',
   },
-  // QR Code styles
   qrContainer: {
     padding: 30,
     alignItems: 'center',
