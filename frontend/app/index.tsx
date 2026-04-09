@@ -242,9 +242,12 @@ export default function Index() {
     setLoading(false);
   };
 
+  // Margin % = (Retail - Cost) / Retail * 100
+  // This tells you what % of the retail price is profit.
+  // e.g. Cost $2.72, Retail $2.90 → (2.90-2.72)/2.90*100 = +6.2%
   const calculatePercentDifference = (unitCost: number, retailPrice: number): number => {
-    if (unitCost === 0) return 0;
-    return ((retailPrice - unitCost) / unitCost) * 100;
+    if (retailPrice === 0) return 0;
+    return ((retailPrice - unitCost) / retailPrice) * 100;
   };
 
   const handleRetailPriceChange = (productKey: string, value: string) => {
