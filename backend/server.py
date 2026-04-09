@@ -614,7 +614,7 @@ async def export_surveys_csv():
         "Product Name",
         "Unit Cost",
         "Retail Price",
-        "% Difference",
+        "Margin %",
         "Created At",
     ])
 
