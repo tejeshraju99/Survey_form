@@ -330,11 +330,14 @@ export default function Index() {
         setRegions([]);
         setCounties([]);
       } else {
-        Alert.alert('Error', 'Failed to submit survey');
+        // Log the actual server error for debugging
+        const errBody = await response.text().catch(() => '');
+        console.error('Submit failed:', response.status, errBody);
+        Alert.alert('Error', `Submit failed (${response.status}). Check console for details.`);
       }
     } catch (error) {
       console.error('Error submitting survey:', error);
-      Alert.alert('Error', 'Failed to submit survey');
+      Alert.alert('Error', 'Network error - could not reach server. Please try again.');
     }
     setSubmitting(false);
   };
@@ -591,8 +594,7 @@ export default function Index() {
                                     percentDiff >= 0 ? styles.positive : styles.negative,
                                   ]}
                                 >
-                                  {percentDiff >= 0 ? '+' : ''}
-                                  {percentDiff.toFixed(1)}%
+                                  {percentDiff.toFixed(2)}%
                                 </Text>
                               )}
                             </View>
@@ -624,14 +626,117 @@ export default function Index() {
     </ScrollView>
   );
 
-  const renderSubmissions = () => (
-    <ScrollView style={styles.scrollView} contentContainerStyle={styles.centeredContent}>
-      <View style={styles.submissionsContainer}>
-        <View style={styles.submissionsHeader}>
-          <Text style={styles.sectionTitle}>Submissions</Text>
+  const renderSubmissions = () => {
+    // Flatten all surveys + products into one list of rows
+    const rows: Array<{
+      surveyId: string;
+      date: string;
+      customerId: string;
+      customerName: string;
+      arAccount: string;
+      chain: string;
+      customerType: string;
+      territory: string;
+      state: string;
+      region: string;
+      county: string;
+      productName: string;
+      unitCost: number | null;
+      retailPrice: number | null;
+      margin: number | null;
+      rowIndex: number;
+    }> = [];
+
+    submissions.forEach((survey) => {
+      if (survey.products.length === 0) {
+        rows.push({
+          surveyId: survey.id,
+          date: survey.date_of_survey,
+          customerId: survey.customer_id || '',
+          customerName: survey.customer_name || survey.account_name || '',
+          arAccount: survey.ar_account || '',
+          chain: survey.chain || '',
+          customerType: survey.customer_type || '',
+          territory: survey.territory || '',
+          state: survey.state,
+          region: survey.region,
+          county: survey.county,
+          productName: '—',
+          unitCost: null,
+          retailPrice: null,
+          margin: null,
+          rowIndex: rows.length,
+        });
+      } else {
+        survey.products.forEach((p) => {
+          rows.push({
+            surveyId: survey.id,
+            date: survey.date_of_survey,
+            customerId: survey.customer_id || '',
+            customerName: survey.customer_name || survey.account_name || '',
+            arAccount: survey.ar_account || '',
+            chain: survey.chain || '',
+            customerType: survey.customer_type || '',
+            territory: survey.territory || '',
+            state: survey.state,
+            region: survey.region,
+            county: survey.county,
+            productName: p.product_name,
+            unitCost: p.unit_cost ?? null,
+            retailPrice: p.retail_price ?? null,
+            margin: p.percent_difference ?? null,
+            rowIndex: rows.length,
+          });
+        });
+      }
+    });
+
+    const COL_WIDTHS = {
+      date: 100,
+      customerId: 80,
+      customerName: 180,
+      arAccount: 150,
+      chain: 140,
+      type: 140,
+      territory: 90,
+      state: 70,
+      region: 110,
+      county: 90,
+      product: 200,
+      unitCost: 80,
+      retail: 75,
+      margin: 75,
+    };
+
+    const totalWidth = Object.values(COL_WIDTHS).reduce((a, b) => a + b, 0);
+
+    const headers = [
+      { key: 'date', label: 'Date', width: COL_WIDTHS.date },
+      { key: 'customerId', label: 'Cust ID', width: COL_WIDTHS.customerId },
+      { key: 'customerName', label: 'Customer Name', width: COL_WIDTHS.customerName },
+      { key: 'arAccount', label: 'AR Account', width: COL_WIDTHS.arAccount },
+      { key: 'chain', label: 'Chain', width: COL_WIDTHS.chain },
+      { key: 'type', label: 'Cust Type', width: COL_WIDTHS.type },
+      { key: 'territory', label: 'Territory', width: COL_WIDTHS.territory },
+      { key: 'state', label: 'State', width: COL_WIDTHS.state },
+      { key: 'region', label: 'Region', width: COL_WIDTHS.region },
+      { key: 'county', label: 'County', width: COL_WIDTHS.county },
+      { key: 'product', label: 'Product', width: COL_WIDTHS.product },
+      { key: 'unitCost', label: 'Unit Cost', width: COL_WIDTHS.unitCost },
+      { key: 'retail', label: 'Retail', width: COL_WIDTHS.retail },
+      { key: 'margin', label: 'Margin %', width: COL_WIDTHS.margin },
+    ];
+
+    return (
+      <View style={styles.tableContainer}>
+        {/* Top bar: count + CSV button */}
+        <View style={styles.tableTopBar}>
+          <Text style={styles.tableCount}>
+            {rows.length} row{rows.length !== 1 ? 's' : ''} · {submissions.length} survey{submissions.length !== 1 ? 's' : ''}
+          </Text>
           <TouchableOpacity style={styles.exportButton} onPress={handleExportCSV}>
-            <Ionicons name="download-outline" size={18} color="#fff" />
-            <Text style={styles.exportButtonText}>CSV</Text>
+            <Ionicons name="download-outline" size={16} color="#fff" />
+            <Text style={styles.exportButtonText}>Export CSV</Text>
           </TouchableOpacity>
         </View>
 
@@ -640,72 +745,90 @@ export default function Index() {
         ) : submissions.length === 0 ? (
           <Text style={styles.noData}>No submissions yet</Text>
         ) : (
-          submissions.map((survey) => (
-            <View key={survey.id} style={styles.submissionCard}>
-              <View style={styles.submissionHeader}>
-                <Text style={styles.submissionDate}>{survey.date_of_survey}</Text>
-                <Text style={styles.submissionLocation}>
-                  {survey.state} · {survey.region} · {survey.county}
-                </Text>
-              </View>
-              <View style={styles.submissionDetails}>
-                <Text style={styles.submissionText}>
-                  <Text style={styles.bold}>Customer: </Text>
-                  {survey.customer_name || survey.account_name}
-                </Text>
-                {survey.customer_id && (
-                  <Text style={styles.submissionText}>
-                    <Text style={styles.bold}>ID: </Text>
-                    {survey.customer_id}
-                  </Text>
-                )}
-                {survey.customer_type && (
-                  <Text style={styles.submissionText}>
-                    <Text style={styles.bold}>Type: </Text>
-                    {survey.customer_type}
-                  </Text>
-                )}
-                <Text style={styles.submissionText}>
-                  <Text style={styles.bold}>Products: </Text>
-                  {survey.products.length}
-                </Text>
-              </View>
-              <View style={styles.productsSummary}>
-                {survey.products.slice(0, 3).map((product, idx) => (
-                  <View key={idx} style={styles.productSummaryRow}>
-                    <Text style={styles.productSummaryName} numberOfLines={1}>
-                      {product.product_name}
-                    </Text>
-                    <View style={styles.productSummaryPrices}>
-                      <Text style={styles.productSummaryPrice}>
-                        ${product.retail_price?.toFixed(2)}
-                      </Text>
-                      <Text
-                        style={[
-                          styles.productSummaryPercent,
-                          (product.percent_difference || 0) >= 0
-                            ? styles.positive
-                            : styles.negative,
-                        ]}
-                      >
-                        {(product.percent_difference || 0) >= 0 ? '+' : ''}
-                        {product.percent_difference?.toFixed(1)}%
-                      </Text>
-                    </View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={true}>
+            <View style={{ width: totalWidth }}>
+              {/* Header row */}
+              <View style={styles.tableHeaderRow}>
+                {headers.map((h) => (
+                  <View key={h.key} style={[styles.tableHeaderCell, { width: h.width }]}>
+                    <Text style={styles.tableHeaderText} numberOfLines={1}>{h.label}</Text>
                   </View>
                 ))}
-                {survey.products.length > 3 && (
-                  <Text style={styles.moreProducts}>
-                    +{survey.products.length - 3} more
-                  </Text>
-                )}
               </View>
+              {/* Data rows */}
+              <ScrollView
+                style={styles.tableBody}
+                showsVerticalScrollIndicator={true}
+                nestedScrollEnabled={true}
+              >
+                {rows.map((row, idx) => {
+                  const isEven = idx % 2 === 0;
+                  const marginColor =
+                    row.margin === null ? '#888' :
+                    row.margin >= 0 ? '#4CAF50' : '#F44336';
+                  return (
+                    <View
+                      key={`${row.surveyId}-${idx}`}
+                      style={[styles.tableDataRow, isEven ? styles.tableRowEven : styles.tableRowOdd]}
+                    >
+                      <View style={[styles.tableCell, { width: COL_WIDTHS.date }]}>
+                        <Text style={styles.tableCellText} numberOfLines={1}>{row.date}</Text>
+                      </View>
+                      <View style={[styles.tableCell, { width: COL_WIDTHS.customerId }]}>
+                        <Text style={[styles.tableCellText, styles.tableCellMono]} numberOfLines={1}>{row.customerId}</Text>
+                      </View>
+                      <View style={[styles.tableCell, { width: COL_WIDTHS.customerName }]}>
+                        <Text style={[styles.tableCellText, styles.tableCellBold]} numberOfLines={2}>{row.customerName}</Text>
+                      </View>
+                      <View style={[styles.tableCell, { width: COL_WIDTHS.arAccount }]}>
+                        <Text style={styles.tableCellText} numberOfLines={1}>{row.arAccount}</Text>
+                      </View>
+                      <View style={[styles.tableCell, { width: COL_WIDTHS.chain }]}>
+                        <Text style={styles.tableCellText} numberOfLines={1}>{row.chain}</Text>
+                      </View>
+                      <View style={[styles.tableCell, { width: COL_WIDTHS.type }]}>
+                        <Text style={styles.tableCellText} numberOfLines={1}>{row.customerType}</Text>
+                      </View>
+                      <View style={[styles.tableCell, { width: COL_WIDTHS.territory }]}>
+                        <Text style={styles.tableCellText} numberOfLines={1}>{row.territory}</Text>
+                      </View>
+                      <View style={[styles.tableCell, { width: COL_WIDTHS.state }]}>
+                        <Text style={styles.tableCellText} numberOfLines={1}>{row.state}</Text>
+                      </View>
+                      <View style={[styles.tableCell, { width: COL_WIDTHS.region }]}>
+                        <Text style={styles.tableCellText} numberOfLines={1}>{row.region}</Text>
+                      </View>
+                      <View style={[styles.tableCell, { width: COL_WIDTHS.county }]}>
+                        <Text style={styles.tableCellText} numberOfLines={1}>{row.county}</Text>
+                      </View>
+                      <View style={[styles.tableCell, { width: COL_WIDTHS.product }]}>
+                        <Text style={styles.tableCellText} numberOfLines={2}>{row.productName}</Text>
+                      </View>
+                      <View style={[styles.tableCell, { width: COL_WIDTHS.unitCost }]}>
+                        <Text style={[styles.tableCellText, styles.tableCellRight]}>
+                          {row.unitCost !== null ? `$${row.unitCost.toFixed(2)}` : ''}
+                        </Text>
+                      </View>
+                      <View style={[styles.tableCell, { width: COL_WIDTHS.retail }]}>
+                        <Text style={[styles.tableCellText, styles.tableCellRight]}>
+                          {row.retailPrice !== null ? `$${row.retailPrice.toFixed(2)}` : ''}
+                        </Text>
+                      </View>
+                      <View style={[styles.tableCell, { width: COL_WIDTHS.margin }]}>
+                        <Text style={[styles.tableCellText, styles.tableCellRight, { color: marginColor }]}>
+                          {row.margin !== null ? `${row.margin.toFixed(2)}%` : ''}
+                        </Text>
+                      </View>
+                    </View>
+                  );
+                })}
+              </ScrollView>
             </View>
-          ))
+          </ScrollView>
         )}
       </View>
-    </ScrollView>
-  );
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -757,7 +880,11 @@ export default function Index() {
       </View>
 
       {activeTab === 'survey' && renderSurveyForm()}
-      {activeTab === 'submissions' && renderSubmissions()}
+      {activeTab === 'submissions' && (
+        <View style={{ flex: 1 }}>
+          {renderSubmissions()}
+        </View>
+      )}
       {activeTab === 'qrcode' && renderQRCode()}
     </SafeAreaView>
   );
@@ -835,6 +962,79 @@ const styles = StyleSheet.create({
     padding: 20,
     width: '100%',
     maxWidth: 500,
+  },
+  tableContainer: {
+    flex: 1,
+    backgroundColor: '#0f0f0f',
+  },
+  tableTopBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#1a1a1a',
+    borderBottomWidth: 1,
+    borderBottomColor: '#2a2a2a',
+  },
+  tableCount: {
+    fontSize: 13,
+    color: '#888',
+  },
+  tableHeaderRow: {
+    flexDirection: 'row',
+    backgroundColor: '#1e2a3a',
+    borderBottomWidth: 2,
+    borderBottomColor: '#2196F3',
+  },
+  tableHeaderCell: {
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    justifyContent: 'center',
+    borderRightWidth: 1,
+    borderRightColor: '#2a3a4a',
+  },
+  tableHeaderText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#7ab8f5',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  tableBody: {
+    maxHeight: '100%',
+  },
+  tableDataRow: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: '#1e1e1e',
+  },
+  tableRowEven: {
+    backgroundColor: '#111',
+  },
+  tableRowOdd: {
+    backgroundColor: '#161616',
+  },
+  tableCell: {
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    justifyContent: 'center',
+    borderRightWidth: 1,
+    borderRightColor: '#1e1e1e',
+  },
+  tableCellText: {
+    fontSize: 12,
+    color: '#ccc',
+  },
+  tableCellBold: {
+    fontWeight: '600',
+    color: '#fff',
+  },
+  tableCellMono: {
+    color: '#7ab8f5',
+  },
+  tableCellRight: {
+    textAlign: 'right',
   },
   sectionTitle: {
     fontSize: 16,
