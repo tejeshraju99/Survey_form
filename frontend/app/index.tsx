@@ -10,8 +10,7 @@ import {
   ActivityIndicator,
   Alert,
   Platform,
-  Linking,
-  FlatList,
+  Linking
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import QRCode from 'react-native-qrcode-svg';
@@ -104,7 +103,6 @@ export default function Index() {
   // UI State
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [deletingSurveyId, setDeletingSurveyId] = useState<string | null>(null);
   const [expandedCategories, setExpandedCategories] = useState<{ [key: string]: boolean }>({});
 
   useEffect(() => {
@@ -357,37 +355,6 @@ export default function Index() {
     }
   };
 
-  const handleDeleteSurvey = (surveyId: string, surveyDate: string, customerName: string) => {
-    Alert.alert(
-      'Delete Survey',
-      `Delete the survey for ${customerName} on ${surveyDate}? This cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            setDeletingSurveyId(surveyId);
-            try {
-              const response = await fetch(`${BACKEND_URL}/api/surveys/${surveyId}`, {
-                method: 'DELETE',
-              });
-              if (response.ok) {
-                // Remove from local state immediately — no need to refetch
-                setSubmissions((prev) => prev.filter((s) => s.id !== surveyId));
-              } else {
-                Alert.alert('Error', 'Failed to delete survey. Please try again.');
-              }
-            } catch (error) {
-              console.error('Delete error:', error);
-              Alert.alert('Error', 'Network error — could not delete survey.');
-            }
-            setDeletingSurveyId(null);
-          },
-        },
-      ]
-    );
-  };
 
   const renderDropdown = (
     label: string,
@@ -780,7 +747,6 @@ export default function Index() {
     });
 
     const COL_WIDTHS = {
-      del:          48,
       date:         95,
       customerId:   75,
       customerName: 200,
@@ -798,7 +764,6 @@ export default function Index() {
     const totalWidth = Object.values(COL_WIDTHS).reduce((a, b) => a + b, 0);
 
     const headers = [
-      { key: 'del',          label: '',              width: COL_WIDTHS.del },
       { key: 'date',         label: 'Date',          width: COL_WIDTHS.date },
       { key: 'customerId',   label: 'Cust ID',       width: COL_WIDTHS.customerId },
       { key: 'customerName', label: 'Customer Name', width: COL_WIDTHS.customerName },
@@ -846,29 +811,12 @@ export default function Index() {
                   const isEven = idx % 2 === 0;
                   const marginColor = row.margin === null ? '#888'
                     : row.margin >= 0 ? '#4CAF50' : '#F44336';
-                  // Show delete icon only on the first product row of each survey
-                  const isFirstOfSurvey = idx === 0 || rows[idx - 1].surveyId !== row.surveyId;
 
                   return (
                     <View
                       key={`${row.surveyId}-${idx}`}
                       style={[styles.tableDataRow, isEven ? styles.tableRowEven : styles.tableRowOdd]}
                     >
-                      {/* Delete — first row of survey only */}
-                      <View style={[styles.tableCell, styles.tableCellCenter, { width: COL_WIDTHS.del }]}>
-                        {isFirstOfSurvey && (
-                          deletingSurveyId === row.surveyId ? (
-                            <ActivityIndicator size="small" color="#F44336" />
-                          ) : (
-                            <TouchableOpacity
-                              onPress={() => handleDeleteSurvey(row.surveyId, row.date, row.customerName)}
-                              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                            >
-                              <Ionicons name="trash-outline" size={15} color="#F44336" />
-                            </TouchableOpacity>
-                          )
-                        )}
-                      </View>
                       <View style={[styles.tableCell, { width: COL_WIDTHS.date }]}>
                         <Text style={styles.tableCellText} numberOfLines={1}>{row.date}</Text>
                       </View>
@@ -1129,10 +1077,6 @@ const styles = StyleSheet.create({
   },
   tableCellRight: {
     textAlign: 'right',
-  },
-  tableCellCenter: {
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   catHeaderCell: {
     backgroundColor: '#1a2535',
