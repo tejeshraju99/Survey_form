@@ -104,6 +104,7 @@ export default function Index() {
   // UI State
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [deletingSurveyId, setDeletingSurveyId] = useState<string | null>(null);
   const [expandedCategories, setExpandedCategories] = useState<{ [key: string]: boolean }>({});
 
   useEffect(() => {
@@ -354,6 +355,38 @@ export default function Index() {
       console.error('Error exporting CSV:', error);
       Alert.alert('Error', 'Failed to export CSV');
     }
+  };
+
+  const handleDeleteSurvey = (surveyId: string, surveyDate: string, customerName: string) => {
+    Alert.alert(
+      'Delete Survey',
+      `Delete the survey for ${customerName} on ${surveyDate}? This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setDeletingSurveyId(surveyId);
+            try {
+              const response = await fetch(`${BACKEND_URL}/api/surveys/${surveyId}`, {
+                method: 'DELETE',
+              });
+              if (response.ok) {
+                // Remove from local state immediately — no need to refetch
+                setSubmissions((prev) => prev.filter((s) => s.id !== surveyId));
+              } else {
+                Alert.alert('Error', 'Failed to delete survey. Please try again.');
+              }
+            } catch (error) {
+              console.error('Delete error:', error);
+              Alert.alert('Error', 'Network error — could not delete survey.');
+            }
+            setDeletingSurveyId(null);
+          },
+        },
+      ]
+    );
   };
 
   const renderDropdown = (
@@ -627,109 +660,161 @@ export default function Index() {
   );
 
   const renderSubmissions = () => {
-    // Flatten all surveys + products into one list of rows
+    // Product name → category mapping (mirrors server.py PRODUCT_CATEGORY_MAP)
+    const PRODUCT_CATEGORY_MAP: { [k: string]: string } = {
+      'Keystone Light 24oz cans': '24oz cans Budget', 'Steel Reserve 24oz cans': '24oz cans Budget',
+      'Steel Reserve Flavor 24oz cans': '24oz cans Budget', 'Lone Star 24oz cans': '24oz cans Budget',
+      'Pabst 24oz cans': '24oz cans Budget', 'Natural Light 25oz cans': '24oz cans Budget',
+      'Busch 25oz cans': '24oz cans Budget', 'Bud Ice 25oz cans': '24oz cans Budget',
+      'Mil Best Ice 24oz cans': '24oz cans Budget', 'Busch Ice 25oz cans': '24oz cans Budget',
+      'MHL 32oz can': '32oz & 40oz Budget', 'MHL 32oz bottle': '32oz & 40oz Budget',
+      'Mil Best 32oz Crusher': '32oz & 40oz Budget', 'Mickeys 40oz': '32oz & 40oz Budget',
+      'MHL 40oz': '32oz & 40oz Budget', 'Steel Reserve 40oz': '32oz & 40oz Budget',
+      'Bud Ice 40oz': '32oz & 40oz Budget',
+      'Miller Lite 24oz cans': '24oz cans Domestic', 'Coors Light 24oz cans': '24oz cans Domestic',
+      'Coors Banquet 24oz cans': '24oz cans Domestic', 'Bud Light 25oz cans': '24oz cans Domestic',
+      'Budweiser 25oz cans': '24oz cans Domestic',
+      'Corona Familiar': '32oz High End', 'Michelob Ultra 24oz': '32oz High End',
+      'Dos Equis 32oz bottles': '32oz High End', 'Corona Familiar 32oz bottles': '32oz High End',
+      'Michelob Ultra 32oz bottles': '32oz High End',
+      'Modelo Family': '24oz High End', 'Corona Family': '24oz High End',
+      'Dos Equis Family': '24oz High End', 'Heineken': '24oz High End',
+      'Michelob Ultra': '24oz High End', 'Bud Chelada': '24oz High End',
+      'Modelo Family 24oz cans': '24oz High End', 'Corona Family 24oz cans': '24oz High End',
+      'Dos Equis Family 24oz cans': '24oz High End', 'Heineken 24oz cans': '24oz High End',
+      'Michelob Ultra 25oz can': '24oz High End', 'Bud Chelada 25oz can': '24oz High End',
+      'Twisted Tea Family 24oz cans': '24oz High End and Flavor',
+      "Mike's Family 23.5oz": '24oz High End and Flavor',
+      'Smirnoff Family 23.5oz': '24oz High End and Flavor',
+      '4 Loko 24oz cans': '24oz High End and Flavor', 'Cayman 24oz cans': '24oz High End and Flavor',
+      'Club Tails 24oz cans': '24oz High End and Flavor', 'Monster 24oz cans': '24oz High End and Flavor',
+      'Cantaritos': '24oz High End and Flavor',
+      'New Belgium': '19.2oz High End and Flavor', 'New Belgium Revolver': '19.2oz High End and Flavor',
+      'Revolver': '19.2oz High End and Flavor', 'Angry Orchard': '19.2oz High End and Flavor',
+      'White Claw': '19.2oz High End and Flavor', 'Cayman Jacked': '19.2oz High End and Flavor',
+      'Miller Lite 6pk bottles': 'Domestic 6pk 12oz', 'Coors Light 6pk bottles': 'Domestic 6pk 12oz',
+      'Coors Banquet 6pk bottles': 'Domestic 6pk 12oz', 'Bud Light 6pk bottles': 'Domestic 6pk 12oz',
+      'Budweiser 6pk bottles': 'Domestic 6pk 12oz',
+      'Keystone Light 6pk 16oz cans': 'Budget 6pk 16oz cans', 'Lonestar 6pk 16oz cans': 'Budget 6pk 16oz cans',
+      'Natural Light 6pk 16oz cans': 'Budget 6pk 16oz cans', 'Busch Light 6pk 16oz cans': 'Budget 6pk 16oz cans',
+      'Steel Reserve 4pk 16oz cans': 'Budget 6pk 16oz cans', 'Bud Ice 4pk 16oz cans': 'Budget 6pk 16oz cans',
+      'Miller Lite 6pk 16oz cans': 'Budget 6pk 16oz cans', 'Coors Light 6pk 16oz cans': 'Budget 6pk 16oz cans',
+      'Coors Banquet 6pk 16oz cans': 'Budget 6pk 16oz cans', 'Bud Light 4pk 16oz cans': 'Budget 6pk 16oz cans',
+      'Budweiser 4pk 16oz cans': 'Budget 6pk 16oz cans',
+      'Modelo 6pk bottles': 'Import and High End 6pk', 'Corona Extra 6pk bottles': 'Import and High End 6pk',
+      'Dos Equis 6pk bottles': 'Import and High End 6pk', 'Heineken 6pk bottles': 'Import and High End 6pk',
+      'Michelob Ultra 6pk bottles': 'Import and High End 6pk', 'Modelo 6pk cans': 'Import and High End 6pk',
+      'Michelob Ultra 6pk 16oz cans': 'Import and High End 6pk', 'Flight 6pk 16oz cans': 'Import and High End 6pk',
+      'Smirnoff': '6pk bottle Flavor', 'Mikes': '6pk bottle Flavor',
+      'Topo Chico': '6pk bottle Flavor', 'Cayman Jack': '6pk bottle Flavor',
+      'Modelo Especial 12pk bottles': '12pk Import & High End', 'Modelo Chelada 12pk cans': '12pk Import & High End',
+      'Michelob Ultra 12pk bottles': '12pk Import & High End', 'Michelob Ultra 12pk cans': '12pk Import & High End',
+      'Modelo 12pk cans': '12pk Import & High End', 'Corona Premier 12pk cans': '12pk Import & High End',
+      'Corona Premier 12pk bts': '12pk Import & High End', 'Dos Equis 12pk cans': '12pk Import & High End',
+      'Heineken 12pk cans': '12pk Import & High End', 'Flight 12pk cans': '12pk Import & High End',
+      'Miller Lite 12pk 12oz cans': 'Domestic 12pk 12oz and 9pk 16oz',
+      'Coors Light 12pk 12oz cans': 'Domestic 12pk 12oz and 9pk 16oz',
+      'Coors Banquet 12pk 12oz cans': 'Domestic 12pk 12oz and 9pk 16oz',
+      'Yuengling Lager 12pk 12oz cans': 'Domestic 12pk 12oz and 9pk 16oz',
+      'Miller Lite 9pk 16oz': 'Domestic 12pk 12oz and 9pk 16oz',
+      'Coors Light 9pk 16oz': 'Domestic 12pk 12oz and 9pk 16oz',
+      'Bud Light 12pk 12oz cans': 'Domestic 12pk 12oz and 9pk 16oz',
+      'Budweiser 12pk 12oz cans': 'Domestic 12pk 12oz and 9pk 16oz',
+      'Miller Lite 12pk 16oz cans': 'Domestic 12pk 16oz cans',
+      'Coors Light 12pk 16oz cans': 'Domestic 12pk 16oz cans',
+      'Coors Banquet 12pk 16oz cans': 'Domestic 12pk 16oz cans',
+      'Bud Light 12pk 16oz cans': 'Domestic 12pk 16oz cans',
+      'Budweiser 12pk 16oz cans': 'Domestic 12pk 16oz cans',
+      'Miller Lite 18pk 12oz cans': '15pk and 18pk (Multiple categories)',
+      'Coors Light 18pk 12oz cans': '15pk and 18pk (Multiple categories)',
+      'Miller Lite 15pk 16oz alum pint': '15pk and 18pk (Multiple categories)',
+      'Coors Light 15pk 16oz alum pint': '15pk and 18pk (Multiple categories)',
+      'Bud Light 18pk 12oz cans': '15pk and 18pk (Multiple categories)',
+      'Budweiser 18pk 12oz cans': '15pk and 18pk (Multiple categories)',
+      'Modelo 18pk 12oz cans': '15pk and 18pk (Multiple categories)',
+      'Michelob Ultra 18pk 12oz cans': '15pk and 18pk (Multiple categories)',
+      'Keystone Light 15pk 12oz cans': '15pk and 18pk Budget',
+      'Natural Light 15pk 12oz cans': '15pk and 18pk Budget',
+      'Busch Light 18pk 12oz cans': '15pk and 18pk Budget',
+      'Keystone Light': '30pk Budget', 'MHL': '30pk Budget',
+      'Natural Light': '30pk Budget', 'Busch': '30pk Budget',
+      'Miller Lite': '30pk Domestic', 'Coors Light': '30pk Domestic',
+      'Coors Banquet': '30pk Domestic', 'Bud Light': '30pk Domestic', 'Budweiser': '30pk Domestic',
+    };
+
+    // Flatten: one row per product, with category resolved
     const rows: Array<{
       surveyId: string;
       date: string;
       customerId: string;
       customerName: string;
-      arAccount: string;
-      chain: string;
-      customerType: string;
       territory: string;
       state: string;
       region: string;
       county: string;
+      category: string;
       productName: string;
       unitCost: number | null;
       retailPrice: number | null;
       margin: number | null;
-      rowIndex: number;
     }> = [];
 
     submissions.forEach((survey) => {
-      if (survey.products.length === 0) {
+      survey.products.forEach((p) => {
         rows.push({
-          surveyId: survey.id,
-          date: survey.date_of_survey,
-          customerId: survey.customer_id || '',
+          surveyId:     survey.id,
+          date:         survey.date_of_survey,
+          customerId:   survey.customer_id || '',
           customerName: survey.customer_name || survey.account_name || '',
-          arAccount: survey.ar_account || '',
-          chain: survey.chain || '',
-          customerType: survey.customer_type || '',
-          territory: survey.territory || '',
-          state: survey.state,
-          region: survey.region,
-          county: survey.county,
-          productName: '—',
-          unitCost: null,
-          retailPrice: null,
-          margin: null,
-          rowIndex: rows.length,
+          territory:    survey.territory || '',
+          state:        survey.state,
+          region:       survey.region,
+          county:       survey.county,
+          category:     PRODUCT_CATEGORY_MAP[p.product_name] || 'Other',
+          productName:  p.product_name,
+          unitCost:     p.unit_cost ?? null,
+          retailPrice:  p.retail_price ?? null,
+          margin:       p.percent_difference ?? null,
         });
-      } else {
-        survey.products.forEach((p) => {
-          rows.push({
-            surveyId: survey.id,
-            date: survey.date_of_survey,
-            customerId: survey.customer_id || '',
-            customerName: survey.customer_name || survey.account_name || '',
-            arAccount: survey.ar_account || '',
-            chain: survey.chain || '',
-            customerType: survey.customer_type || '',
-            territory: survey.territory || '',
-            state: survey.state,
-            region: survey.region,
-            county: survey.county,
-            productName: p.product_name,
-            unitCost: p.unit_cost ?? null,
-            retailPrice: p.retail_price ?? null,
-            margin: p.percent_difference ?? null,
-            rowIndex: rows.length,
-          });
-        });
-      }
+      });
     });
 
     const COL_WIDTHS = {
-      date: 100,
-      customerId: 80,
-      customerName: 180,
-      arAccount: 150,
-      chain: 140,
-      type: 140,
-      territory: 90,
-      state: 70,
-      region: 110,
-      county: 90,
-      product: 200,
-      unitCost: 80,
-      retail: 75,
-      margin: 75,
+      del:          48,
+      date:         95,
+      customerId:   75,
+      customerName: 200,
+      territory:    90,
+      state:        65,
+      region:       110,
+      county:       85,
+      category:     160,
+      product:      210,
+      unitCost:     80,
+      retail:       75,
+      margin:       80,
     };
 
     const totalWidth = Object.values(COL_WIDTHS).reduce((a, b) => a + b, 0);
 
     const headers = [
-      { key: 'date', label: 'Date', width: COL_WIDTHS.date },
-      { key: 'customerId', label: 'Cust ID', width: COL_WIDTHS.customerId },
+      { key: 'del',          label: '',              width: COL_WIDTHS.del },
+      { key: 'date',         label: 'Date',          width: COL_WIDTHS.date },
+      { key: 'customerId',   label: 'Cust ID',       width: COL_WIDTHS.customerId },
       { key: 'customerName', label: 'Customer Name', width: COL_WIDTHS.customerName },
-      { key: 'arAccount', label: 'AR Account', width: COL_WIDTHS.arAccount },
-      { key: 'chain', label: 'Chain', width: COL_WIDTHS.chain },
-      { key: 'type', label: 'Cust Type', width: COL_WIDTHS.type },
-      { key: 'territory', label: 'Territory', width: COL_WIDTHS.territory },
-      { key: 'state', label: 'State', width: COL_WIDTHS.state },
-      { key: 'region', label: 'Region', width: COL_WIDTHS.region },
-      { key: 'county', label: 'County', width: COL_WIDTHS.county },
-      { key: 'product', label: 'Product', width: COL_WIDTHS.product },
-      { key: 'unitCost', label: 'Unit Cost', width: COL_WIDTHS.unitCost },
-      { key: 'retail', label: 'Retail', width: COL_WIDTHS.retail },
-      { key: 'margin', label: 'Margin %', width: COL_WIDTHS.margin },
+      { key: 'territory',    label: 'Territory',     width: COL_WIDTHS.territory },
+      { key: 'state',        label: 'State',         width: COL_WIDTHS.state },
+      { key: 'region',       label: 'Region',        width: COL_WIDTHS.region },
+      { key: 'county',       label: 'County',        width: COL_WIDTHS.county },
+      { key: 'category',     label: 'Category',      width: COL_WIDTHS.category },
+      { key: 'product',      label: 'Product',       width: COL_WIDTHS.product },
+      { key: 'unitCost',     label: 'Unit Cost',     width: COL_WIDTHS.unitCost },
+      { key: 'retail',       label: 'Retail',        width: COL_WIDTHS.retail },
+      { key: 'margin',       label: 'Margin %',      width: COL_WIDTHS.margin },
     ];
 
     return (
       <View style={styles.tableContainer}>
-        {/* Top bar: count + CSV button */}
         <View style={styles.tableTopBar}>
           <Text style={styles.tableCount}>
             {rows.length} row{rows.length !== 1 ? 's' : ''} · {submissions.length} survey{submissions.length !== 1 ? 's' : ''}
@@ -745,9 +830,9 @@ export default function Index() {
         ) : submissions.length === 0 ? (
           <Text style={styles.noData}>No submissions yet</Text>
         ) : (
-          <ScrollView horizontal showsHorizontalScrollIndicator={true}>
+          <ScrollView horizontal showsHorizontalScrollIndicator>
             <View style={{ width: totalWidth }}>
-              {/* Header row */}
+              {/* Sticky header */}
               <View style={styles.tableHeaderRow}>
                 {headers.map((h) => (
                   <View key={h.key} style={[styles.tableHeaderCell, { width: h.width }]}>
@@ -756,21 +841,34 @@ export default function Index() {
                 ))}
               </View>
               {/* Data rows */}
-              <ScrollView
-                style={styles.tableBody}
-                showsVerticalScrollIndicator={true}
-                nestedScrollEnabled={true}
-              >
+              <ScrollView showsVerticalScrollIndicator nestedScrollEnabled>
                 {rows.map((row, idx) => {
                   const isEven = idx % 2 === 0;
-                  const marginColor =
-                    row.margin === null ? '#888' :
-                    row.margin >= 0 ? '#4CAF50' : '#F44336';
+                  const marginColor = row.margin === null ? '#888'
+                    : row.margin >= 0 ? '#4CAF50' : '#F44336';
+                  // Show delete icon only on the first product row of each survey
+                  const isFirstOfSurvey = idx === 0 || rows[idx - 1].surveyId !== row.surveyId;
+
                   return (
                     <View
                       key={`${row.surveyId}-${idx}`}
                       style={[styles.tableDataRow, isEven ? styles.tableRowEven : styles.tableRowOdd]}
                     >
+                      {/* Delete — first row of survey only */}
+                      <View style={[styles.tableCell, styles.tableCellCenter, { width: COL_WIDTHS.del }]}>
+                        {isFirstOfSurvey && (
+                          deletingSurveyId === row.surveyId ? (
+                            <ActivityIndicator size="small" color="#F44336" />
+                          ) : (
+                            <TouchableOpacity
+                              onPress={() => handleDeleteSurvey(row.surveyId, row.date, row.customerName)}
+                              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                            >
+                              <Ionicons name="trash-outline" size={15} color="#F44336" />
+                            </TouchableOpacity>
+                          )
+                        )}
+                      </View>
                       <View style={[styles.tableCell, { width: COL_WIDTHS.date }]}>
                         <Text style={styles.tableCellText} numberOfLines={1}>{row.date}</Text>
                       </View>
@@ -779,15 +877,6 @@ export default function Index() {
                       </View>
                       <View style={[styles.tableCell, { width: COL_WIDTHS.customerName }]}>
                         <Text style={[styles.tableCellText, styles.tableCellBold]} numberOfLines={2}>{row.customerName}</Text>
-                      </View>
-                      <View style={[styles.tableCell, { width: COL_WIDTHS.arAccount }]}>
-                        <Text style={styles.tableCellText} numberOfLines={1}>{row.arAccount}</Text>
-                      </View>
-                      <View style={[styles.tableCell, { width: COL_WIDTHS.chain }]}>
-                        <Text style={styles.tableCellText} numberOfLines={1}>{row.chain}</Text>
-                      </View>
-                      <View style={[styles.tableCell, { width: COL_WIDTHS.type }]}>
-                        <Text style={styles.tableCellText} numberOfLines={1}>{row.customerType}</Text>
                       </View>
                       <View style={[styles.tableCell, { width: COL_WIDTHS.territory }]}>
                         <Text style={styles.tableCellText} numberOfLines={1}>{row.territory}</Text>
@@ -800,6 +889,10 @@ export default function Index() {
                       </View>
                       <View style={[styles.tableCell, { width: COL_WIDTHS.county }]}>
                         <Text style={styles.tableCellText} numberOfLines={1}>{row.county}</Text>
+                      </View>
+                      {/* Category — accent colour */}
+                      <View style={[styles.tableCell, { width: COL_WIDTHS.category }]}>
+                        <Text style={[styles.tableCellText, styles.categoryBadge]} numberOfLines={2}>{row.category}</Text>
                       </View>
                       <View style={[styles.tableCell, { width: COL_WIDTHS.product }]}>
                         <Text style={styles.tableCellText} numberOfLines={2}>{row.productName}</Text>
@@ -829,6 +922,7 @@ export default function Index() {
       </View>
     );
   };
+
 
   return (
     <SafeAreaView style={styles.container}>
@@ -1035,6 +1129,49 @@ const styles = StyleSheet.create({
   },
   tableCellRight: {
     textAlign: 'right',
+  },
+  tableCellCenter: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  catHeaderCell: {
+    backgroundColor: '#1a2535',
+    borderLeftWidth: 1,
+    borderLeftColor: '#2196F3',
+  },
+  catHeaderText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#7ab8f5',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+    lineHeight: 13,
+  },
+  catCell: {
+    borderLeftWidth: 1,
+    borderLeftColor: '#1e2a3a',
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+  },
+  catRetail: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#4CAF50',
+  },
+  catProductCount: {
+    fontSize: 9,
+    color: '#555',
+    marginTop: 1,
+  },
+  catEmpty: {
+    fontSize: 12,
+    color: '#2a2a2a',
+    textAlign: 'right',
+  },
+  categoryBadge: {
+    color: '#7ab8f5',
+    fontSize: 11,
+    fontWeight: '600',
   },
   sectionTitle: {
     fontSize: 16,
@@ -1343,86 +1480,6 @@ const styles = StyleSheet.create({
     color: '#666',
     fontSize: 14,
     marginTop: 30,
-  },
-  submissionCard: {
-    backgroundColor: '#1a1a1a',
-    borderRadius: 10,
-    padding: 14,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: '#2a2a2a',
-  },
-  submissionHeader: {
-    marginBottom: 10,
-    paddingBottom: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#2a2a2a',
-    alignItems: 'center',
-  },
-  submissionDate: {
-    fontSize: 15,
-    fontWeight: 'bold',
-    color: '#2196F3',
-    textAlign: 'center',
-  },
-  submissionLocation: {
-    fontSize: 12,
-    color: '#777',
-    marginTop: 2,
-    textAlign: 'center',
-  },
-  submissionDetails: {
-    marginBottom: 10,
-    alignItems: 'center',
-  },
-  submissionText: {
-    fontSize: 13,
-    color: '#bbb',
-    marginBottom: 2,
-    textAlign: 'center',
-  },
-  bold: {
-    fontWeight: '600',
-    color: '#ddd',
-  },
-  productsSummary: {
-    backgroundColor: '#222',
-    borderRadius: 6,
-    padding: 10,
-  },
-  productSummaryRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 4,
-  },
-  productSummaryName: {
-    flex: 1,
-    fontSize: 12,
-    color: '#aaa',
-    paddingRight: 8,
-  },
-  productSummaryPrices: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  productSummaryPrice: {
-    fontSize: 12,
-    color: '#ddd',
-    fontWeight: '500',
-  },
-  productSummaryPercent: {
-    fontSize: 11,
-    fontWeight: '600',
-    minWidth: 40,
-    textAlign: 'right',
-  },
-  moreProducts: {
-    fontSize: 11,
-    color: '#666',
-    marginTop: 6,
-    textAlign: 'center',
   },
   qrContainer: {
     padding: 30,
