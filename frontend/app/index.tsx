@@ -97,6 +97,11 @@ export default function Index() {
   const [products, setProducts] = useState<{ [category: string]: Product[] }>({});
   const [retailPrices, setRetailPrices] = useState<{ [key: string]: string }>({});
 
+  // Additional survey questions
+  const [displaysPriceTags, setDisplaysPriceTags] = useState('');
+  const [missingShelfTags, setMissingShelfTags] = useState('');
+  const [comments, setComments] = useState('');
+
   // Submissions State
   const [submissions, setSubmissions] = useState<Survey[]>([]);
 
@@ -306,6 +311,10 @@ export default function Index() {
           last_month_sales: selectedCustomer['Last Month Sales'] || '',
           product_group: selectedCustomer['Product Group'] || '',
           distribution_area: selectedCustomer['Distribution Area'] || '',
+          // Additional questions
+          displays_price_tags: displaysPriceTags,
+          missing_shelf_tags: missingShelfTags,
+          comments: comments,
           // Legacy fields for backward compat
           account_manager: selectedCustomer['Customer Name'],
           account_name: selectedCustomer['AR Account'],
@@ -328,6 +337,9 @@ export default function Index() {
         setRetailPrices({});
         setRegions([]);
         setCounties([]);
+        setDisplaysPriceTags('');
+        setMissingShelfTags('');
+        setComments('');
       } else {
         // Log the actual server error for debugging
         const errBody = await response.text().catch(() => '');
@@ -607,6 +619,55 @@ export default function Index() {
               ))}
             </>
           )
+        )}
+
+        {Object.keys(products).length > 0 && (
+          <>
+            <Text style={styles.sectionTitle}>Additional Questions</Text>
+
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Does the account display price tags?</Text>
+              <View style={styles.yesNoRow}>
+                {['Yes', 'No'].map((opt) => (
+                  <TouchableOpacity
+                    key={opt}
+                    style={[styles.yesNoBtn, displaysPriceTags === opt && styles.yesNoBtnSelected]}
+                    onPress={() => setDisplaysPriceTags(opt)}
+                  >
+                    <Text style={[styles.yesNoBtnText, displaysPriceTags === opt && styles.yesNoBtnTextSelected]}>
+                      {opt}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Are we missing any shelf tags? If so, how many?</Text>
+              <TextInput
+                style={styles.textAreaInput}
+                value={missingShelfTags}
+                onChangeText={setMissingShelfTags}
+                placeholder="e.g. Yes, missing 3 tags on Modelo shelf"
+                placeholderTextColor="#555"
+                multiline
+                numberOfLines={3}
+              />
+            </View>
+
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Comments</Text>
+              <TextInput
+                style={styles.textAreaInput}
+                value={comments}
+                onChangeText={setComments}
+                placeholder="Any additional notes..."
+                placeholderTextColor="#555"
+                multiline
+                numberOfLines={4}
+              />
+            </View>
+          </>
         )}
 
         {Object.keys(products).length > 0 && (
@@ -1116,6 +1177,45 @@ const styles = StyleSheet.create({
     color: '#7ab8f5',
     fontSize: 11,
     fontWeight: '600',
+  },
+  yesNoRow: {
+    flexDirection: 'row',
+    gap: 12,
+    justifyContent: 'center',
+    marginTop: 4,
+  },
+  yesNoBtn: {
+    paddingHorizontal: 32,
+    paddingVertical: 11,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#333',
+    backgroundColor: '#1e1e1e',
+  },
+  yesNoBtnSelected: {
+    backgroundColor: '#2196F3',
+    borderColor: '#2196F3',
+  },
+  yesNoBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#888',
+  },
+  yesNoBtnTextSelected: {
+    color: '#fff',
+  },
+  textAreaInput: {
+    backgroundColor: '#1e1e1e',
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 14,
+    color: '#fff',
+    borderWidth: 1,
+    borderColor: '#333',
+    width: '100%',
+    minHeight: 80,
+    textAlignVertical: 'top',
   },
   sectionTitle: {
     fontSize: 16,
