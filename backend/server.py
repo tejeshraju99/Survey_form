@@ -293,8 +293,8 @@ LOCATION_DATA = {
                     {"name": "Coors Light 18pk 12oz cans",     "unit_cost": 17.60},
                     {"name": "Miller Lite 15pk 16oz alum pint","unit_cost": 17.60},
                     {"name": "Coors Light 15pk 16oz alum pint","unit_cost": 17.60},
-                    {"name": "Bud Light 18pk 12oz cans",       "unit_cost": 18.55},
-                    {"name": "Budweiser 18pk 12oz cans",       "unit_cost": 18.55},
+                    {"name": "Bud Light 18pk 12oz cans",       "unit_cost": 17.65},
+                    {"name": "Budweiser 18pk 12oz cans",       "unit_cost": 17.65},
                     {"name": "Modelo 18pk 12oz cans",          "unit_cost": 19.40},
                     {"name": "Michelob Ultra 18pk 12oz cans",  "unit_cost": 19.40},
                 ],
@@ -488,6 +488,10 @@ class SurveyCreate(BaseModel):
     region: str
     county: str
     products: List[ProductEntry]
+    # Additional questions
+    displays_price_tags: Optional[str] = ''
+    missing_shelf_tags: Optional[str] = ''
+    comments: Optional[str] = ''
 
 
 class Survey(BaseModel):
@@ -512,6 +516,10 @@ class Survey(BaseModel):
     region: str
     county: str
     products: List[ProductEntry]
+    # Additional questions
+    displays_price_tags: Optional[str] = ''
+    missing_shelf_tags: Optional[str] = ''
+    comments: Optional[str] = ''
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
@@ -595,6 +603,9 @@ async def create_survey(survey: SurveyCreate):
         "region": survey_obj.region,
         "county": survey_obj.county,
         "products": [p.dict() for p in survey_obj.products],
+        "displays_price_tags": survey_obj.displays_price_tags,
+        "missing_shelf_tags": survey_obj.missing_shelf_tags,
+        "comments": survey_obj.comments,
         "created_at": survey_obj.created_at,
     }
     await db.surveys.insert_one(insert_doc)
@@ -724,6 +735,9 @@ async def export_surveys_csv():
         "State",
         "Region",
         "County",
+        "Displays Price Tags",
+        "Missing Shelf Tags",
+        "Comments",
         "Category",
         "Product",
         "Unit Cost",
@@ -744,6 +758,9 @@ async def export_surveys_csv():
             survey.get("state", ""),
             survey.get("region", ""),
             survey.get("county", ""),
+            survey.get("displays_price_tags", ""),
+            survey.get("missing_shelf_tags", ""),
+            survey.get("comments", ""),
         ]
         for product in survey.get("products", []):
             pname  = product.get("product_name", "")
