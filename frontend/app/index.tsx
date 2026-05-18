@@ -67,6 +67,10 @@ interface Survey {
   region: string;
   county: string;
   products: ProductEntry[];
+  // Additional survey questions
+  displays_price_tags: string;
+  missing_shelf_tags: string;
+  comments: string;
   created_at: string;
 }
 
@@ -719,7 +723,8 @@ export default function Index() {
       'Cantaritos': '24oz High End and Flavor',
       'New Belgium': '19.2oz High End and Flavor', 'New Belgium Revolver': '19.2oz High End and Flavor',
       'Revolver': '19.2oz High End and Flavor', 'Angry Orchard': '19.2oz High End and Flavor',
-      'White Claw': '19.2oz High End and Flavor', 'Cayman Jacked': '19.2oz High End and Flavor',
+      'White Claw': '19.2oz High End and Flavor', 'White Claw 6pk': '6pk bottle Flavor',
+      'Cayman Jacked': '19.2oz High End and Flavor',
       'Miller Lite 6pk bottles': 'Domestic 6pk 12oz', 'Coors Light 6pk bottles': 'Domestic 6pk 12oz',
       'Coors Banquet 6pk bottles': 'Domestic 6pk 12oz', 'Bud Light 6pk bottles': 'Domestic 6pk 12oz',
       'Budweiser 6pk bottles': 'Domestic 6pk 12oz',
